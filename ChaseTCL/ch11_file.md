@@ -17,7 +17,7 @@ set file [open 파일명 모드]
 예시:
 
 ```tcl
-set fid [open "example.txt" w]
+set file [open "example.txt" w]
 ```
 
 #### 1.2 파일 닫기 (close)
