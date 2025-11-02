@@ -16,10 +16,10 @@ TCL에서 이중 콜론(::)은 다음과 같은 용도로 사용됩니다:
 set ::globalVar 10
 
 proc localScope {} {
-    puts $::globalVar  # 전역 변수 접근
+    puts $::globalVar  ;# 전역 변수 접근
 }
 
-localScope  # 출력: 10
+localScope  ;# 출력: 10
 ```
 
 ### 3. 네임스페이스 구분
@@ -35,7 +35,7 @@ namespace eval MyNamespace {
     }
 }
 
-MyNamespace::myProc  # 출력: 20
+MyNamespace::myProc  ;# 출력: 20
 ```
 
 ### 4. 정규화된 이름 생성
@@ -51,7 +51,7 @@ namespace eval Outer {
     }
 }
 
-::Outer::Inner::nestedProc  # 출력: Nested procedure
+::Outer::Inner::nestedProc  ;# 출력: Nested procedure
 ```
 
 ### 5. 변수 및 프로시저 이름 충돌 방지
@@ -71,8 +71,8 @@ namespace eval NS2 {
     }
 }
 
-NS1::common  # 출력: NS1's common procedure
-NS2::common  # 출력: NS2's common procedure
+NS1::common  ;# 출력: NS1's common procedure
+NS2::common  ;# 출력: NS2's common procedure
 ```
 
 ### 6. 현재 네임스페이스 참조
@@ -85,11 +85,11 @@ namespace eval MyNS {
     
     proc accessVar {} {
         variable localVar
-        puts ${::MyNS::localVar}  # 현재 네임스페이스의 변수 명시적 참조
+        puts ${::MyNS::localVar}  ;# 현재 네임스페이스의 변수 명시적 참조
     }
 }
 
-MyNS::accessVar  # 출력: 30
+MyNS::accessVar  ;# 출력: 30
 ```
 
 ### 7. 이중 콜론과 upvar 사용
@@ -103,11 +103,11 @@ proc outerProc {} {
 }
 
 proc innerProc {} {
-    upvar ::localVar globalVar
+    upvar 1 localVar globalVar
     puts $globalVar
 }
 
-outerProc  # 출력: 40
+outerProc  ;# 출력: 40
 ```
 
 ### 8. 주의사항 ⚠️

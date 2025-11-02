@@ -15,13 +15,13 @@
 # 이중 콜론을 이름 앞에 사용하면 전역 네임스페이스의 변수나 프로시저를 참조합니다.
 
 # ```tcl
-# set ::globalVar 10
+set ::globalVar 10
 
-# proc localScope {} {
-#     puts $::globalVar  # 전역 변수 접근
-# }
+proc localScope {} {
+    puts $::globalVar  ;# 전역 변수 접근
+}
 
-# localScope  # 출력: 10
+localScope  ;# 출력: 10
 # ```
 
 # ### 3. 네임스페이스 구분
@@ -29,15 +29,15 @@
 # 이중 콜론은 네임스페이스를 구분하는 데 사용됩니다.
 
 # ```tcl
-# namespace eval MyNamespace {
-#     variable myVar 20
+namespace eval MyNamespace {
+    variable myVar 20
     
-#     proc myProc {} {
-#         puts $MyNamespace::myVar
-#     }
-# }
+    proc myProc {} {
+        puts $MyNamespace::myVar
+    }
+}
 
-# MyNamespace::myProc  # 출력: 20
+MyNamespace::myProc  ;# 출력: 20
 # ```
 
 # ### 4. 정규화된 이름 생성
@@ -45,15 +45,15 @@
 # 여러 네임스페이스를 거치는 경우, 이중 콜론으로 전체 경로를 지정할 수 있습니다.
 
 # ```tcl
-# namespace eval Outer {
-#     namespace eval Inner {
-#         proc nestedProc {} {
-#             puts "Nested procedure"
-#         }
-#     }
-# }
+namespace eval Outer {
+    namespace eval Inner {
+        proc nestedProc {} {
+            puts "Nested procedure"
+        }
+    }
+}
 
-# ::Outer::Inner::nestedProc  # 출력: Nested procedure
+::Outer::Inner::nestedProc  ;# 출력: Nested procedure
 # ```
 
 # ### 5. 변수 및 프로시저 이름 충돌 방지
@@ -61,20 +61,20 @@
 # 이중 콜론을 사용하여 서로 다른 네임스페이스의 동일한 이름을 가진 변수나 프로시저를 구분할 수 있습니다.
 
 # ```tcl
-# namespace eval NS1 {
-#     proc common {} {
-#         puts "NS1's common procedure"
-#     }
-# }
+namespace eval NS1 {
+    proc common {} {
+        puts "NS1's common procedure"
+    }
+}
 
-# namespace eval NS2 {
-#     proc common {} {
-#         puts "NS2's common procedure"
-#     }
-# }
+namespace eval NS2 {
+    proc common {} {
+        puts "NS2's common procedure"
+    }
+}
 
-# NS1::common  # 출력: NS1's common procedure
-# NS2::common  # 출력: NS2's common procedure
+NS1::common  ;# 출력: NS1's common procedure
+NS2::common  ;# 출력: NS2's common procedure
 # ```
 
 # ### 6. 현재 네임스페이스 참조
@@ -82,16 +82,16 @@
 # 현재 네임스페이스를 명시적으로 참조할 때 사용할 수 있습니다.
 
 # ```tcl
-# namespace eval MyNS {
-#     variable localVar 30
+namespace eval MyNS {
+    variable localVar 30
     
-#     proc accessVar {} {
-#         variable localVar
-#         puts ${::MyNS::localVar}  # 현재 네임스페이스의 변수 명시적 참조
-#     }
-# }
+    proc accessVar {} {
+        variable localVar
+        puts ${::MyNS::localVar}  ;# 현재 네임스페이스의 변수 명시적 참조
+    }
+}
 
-# MyNS::accessVar  # 출력: 30
+MyNS::accessVar  ;# 출력: 30
 # ```
 
 # ### 7. 이중 콜론과 upvar 사용
@@ -99,17 +99,18 @@
 # 상위 스코프의 변수를 참조할 때 이중 콜론과 upvar를 함께 사용할 수 있습니다.
 
 # ```tcl
-# proc outerProc {} {
-#     set localVar 40
-#     innerProc
-# }
+proc outerProc {} {
+    set localVar 40
+    innerProc
+}
 
-# proc innerProc {} {
-#     upvar ::localVar globalVar
-#     puts $globalVar
-# }
+proc innerProc {} {
+    upvar 1 localVar globalVar
+    puts $globalVar
+}
 
-# outerProc  # 출력: 40
+outerProc  ;# 출력: 40
+
 # ```
 
 # ### 8. 주의사항 ⚠️
