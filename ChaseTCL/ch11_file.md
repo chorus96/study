@@ -90,9 +90,9 @@ seek $file 오프셋 위치옵션
 예시:
 
 ```tcl
-seek $file 10 start  # 파일 시작에서 10바이트 이동
-seek $file -5 current  # 현재 위치에서 5바이트 뒤로
-seek $file 0 end  # 파일 끝으로 이동
+seek $file 10 start  ;# 파일 시작에서 10바이트 이동
+seek $file -5 current  ;# 현재 위치에서 5바이트 뒤로
+seek $file 0 end  ;# 파일 끝으로 이동
 ```
 
 ### 5. 파일 정보 및 조작
