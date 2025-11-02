@@ -14,10 +14,10 @@ list 인자1 인자2 ...
 
 ```tcl
 set fruits [list apple banana cherry]
-puts $fruits  # 출력: apple banana cherry
+puts $fruits  ;# 출력: apple banana cherry
 
 set mixed [list "Hello World" 42 3.14 {nested list}]
-puts $mixed  # 출력: {Hello World} 42 3.14 {nested list}
+puts $mixed  ;# 출력: {Hello World} 42 3.14 {nested list}
 ```
 
 #### 1.3 주요 특징
@@ -40,11 +40,11 @@ lappend 변수명 값1 값2 ...
 ```tcl
 set fruits {apple banana}
 lappend fruits cherry orange
-puts $fruits  # 출력: apple banana cherry orange
+puts $fruits  ;# 출력: apple banana cherry orange
 
 set numbers {}
 lappend numbers 1 2 3
-puts $numbers  # 출력: 1 2 3
+puts $numbers  ;# 출력: 1 2 3
 ```
 
 #### 2.3 주요 특징
@@ -74,10 +74,10 @@ concat ?인자1 인자2 ...?
 set list1 {1 2 3}
 set list2 {4 5 6}
 set combined [concat $list1 $list2]
-puts $combined  # 출력: 1 2 3 4 5 6
+puts $combined  ;# 출력: 1 2 3 4 5 6
 
 set result [concat "Hello" {World} [list How are you?]]
-puts $result  # 출력: Hello World {How are you?}
+puts $result  ;# 출력: Hello World {How are you?}
 ```
 
 #### 3.3 주요 특징
@@ -108,13 +108,13 @@ set vegetables [list carrot potato]
 set numbers [list 1 2 3]
 
 set food_list [list $fruits $vegetables]
-puts $food_list  # 출력: {apple banana} {carrot potato}
+puts $food_list  ;# 출력: {apple banana} {carrot potato}
 
 lappend food_list $numbers
-puts $food_list  # 출력: {apple banana} {carrot potato} {1 2 3}
+puts $food_list  ;# 출력: {apple banana} {carrot potato} {1 2 3}
 
 set flat_list [concat {prefix} $food_list {suffix}]
-puts $flat_list  # 출력: prefix apple banana carrot potato 1 2 3 suffix
+puts $flat_list  ;# 출력: prefix apple banana carrot potato 1 2 3 suffix
 ```
 
 ### 6. 성능 고려사항 🚀
