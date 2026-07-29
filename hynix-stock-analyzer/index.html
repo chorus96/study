@@ -901,7 +901,7 @@
     document.querySelector(".hero").scrollIntoView({ behavior: "smooth", block: "start" });
   };
   document.getElementById("sample").onclick = () => {
-    const s = sampleData(130);
+    const s = sampleData(260);
     document.getElementById("ta").value = s.join("\n");
     document.querySelector('#order [data-ord="old"]').click();
     document.getElementById("err").textContent = "";
@@ -920,7 +920,7 @@
   (async function init() {
     const live = await loadLive();
     if (live) render(analyze(live.closes, { source: "live", dates: live.dates, updated: live.updated, marketTime: live.marketTime, name: live.name, symbol: live.symbol }));
-    else render(analyze(sampleData(130), { source: "sample" }));
+    else render(analyze(sampleData(260), { source: "sample" }));
     // 테마 토글 시 색상 재적용
     const mo = new MutationObserver(() => { if (currentA) render(currentA); });
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });

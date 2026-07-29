@@ -8,7 +8,7 @@ SYMBOL="${SYMBOL:-000660.KS}"          # Yahoo 형식
 NUMCODE="${NUMCODE:-000660}"           # 숫자 코드
 NAME="${NAME:-SK하이닉스}"
 OUT="${OUT:-hynix-stock-analyzer/data.json}"
-RANGE="${RANGE:-6mo}"
+RANGE="${RANGE:-1y}"
 UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 UPDATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -61,7 +61,7 @@ with open(src, newline="") as f:
         t = int(datetime.datetime.strptime(d, "%Y-%m-%d")
                 .replace(tzinfo=datetime.timezone.utc).timestamp())
         rows.append({"t": t, "c": c})
-rows = rows[-140:]
+rows = rows[-260:]
 if len(rows) < 5:
     sys.exit("Stooq: 데이터 부족")
 json.dump({"symbol": numcode + ".KR", "name": name, "currency": "KRW",
@@ -86,7 +86,7 @@ try:
 except Exception as e:
     sys.exit("pykrx import 실패: %s" % e)
 end = datetime.datetime.now()
-start = end - datetime.timedelta(days=280)
+start = end - datetime.timedelta(days=400)
 df = stock.get_market_ohlcv(start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), numcode)
 if df is None or df.empty:
     sys.exit("pykrx: 빈 데이터")
@@ -96,7 +96,7 @@ for idx, row in df.iterrows():
     c = float(row["종가"])
     if c > 0:
         points.append({"t": int(d.timestamp()), "c": c})
-points = points[-140:]
+points = points[-260:]
 if len(points) < 5:
     sys.exit("pykrx: 데이터 부족")
 json.dump({"symbol": numcode + ".KS", "name": name, "currency": "KRW",
@@ -114,7 +114,7 @@ fi
 # ---------- 4) Twelve Data (무료 API 키, 클라우드 IP 허용) ----------
 # GitHub Secret TWELVEDATA_API_KEY 가 설정된 경우에만 시도.
 if [ "$ok" -ne 1 ] && [ -n "${TWELVEDATA_API_KEY:-}" ]; then
-  code=$(fetch "TwelveData" "https://api.twelvedata.com/time_series?symbol=${NUMCODE}&exchange=KRX&interval=1day&outputsize=140&order=ASC&apikey=${TWELVEDATA_API_KEY}")
+  code=$(fetch "TwelveData" "https://api.twelvedata.com/time_series?symbol=${NUMCODE}&exchange=KRX&interval=1day&outputsize=260&order=ASC&apikey=${TWELVEDATA_API_KEY}")
   if [ "$code" = "200" ] && jq -e '.values and (.values|length>0)' "$tmp" >/dev/null 2>&1; then
     jq --arg name "$NAME" --arg updated "$UPDATED" --arg code "$NUMCODE" '
       { symbol: ($code + ".KRX"), name: $name, currency: "KRW",
@@ -135,7 +135,7 @@ if [ "$ok" -ne 1 ] && [ -n "${FMP_API_KEY:-}" ]; then
         price: (.historical[0].close),
         marketTime: (.historical[0].date | strptime("%Y-%m-%d") | mktime),
         updated: $updated,
-        points: [ .historical | reverse | .[-140:][] | { t: (.date | strptime("%Y-%m-%d") | mktime), c: .close } ] }' "$tmp" > "$OUT"
+        points: [ .historical | reverse | .[-260:][] | { t: (.date | strptime("%Y-%m-%d") | mktime), c: .close } ] }' "$tmp" > "$OUT"
     ok=1; echo "→ 성공: Financial Modeling Prep"
   fi
 fi
