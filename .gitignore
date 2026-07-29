@@ -1,3 +1,6 @@
 
 # 실시간 시세는 GitHub Actions가 배포 시 생성 (커밋 안 함)
 hynix-stock-analyzer/data.json
+
+# 뉴스 분석 결과도 배포 시 생성 (커밋 안 함)
+hynix-stock-analyzer/news.json
