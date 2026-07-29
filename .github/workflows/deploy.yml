@@ -45,17 +45,15 @@ jobs:
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
 
-      - name: Analyze latest news with Claude
-        # ANTHROPIC_API_KEY 시크릿이 있을 때만 뉴스 분석을 수행(없으면 스킵).
-        # 실패해도 사이트 배포를 막지 않도록 continue-on-error.
+      - name: Analyze latest news (keyword-based, no API key)
+        # Google News RSS(키 불필요)에서 헤드라인을 받아 키워드 규칙으로
+        # 간이 심리를 집계한다. 실패해도 사이트 배포를 막지 않도록 continue-on-error.
         continue-on-error: true
         run: bash scripts/fetch_news.sh
         env:
           NAME: 'SK하이닉스'
           NEWS_QUERY: 'SK하이닉스'
-          NEWS_MODEL: 'claude-haiku-4-5'
           NEWS_OUT: 'hynix-stock-analyzer/news.json'
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
       - name: Configure Pages
         # 최초 1회만 Settings → Pages → Source를 "GitHub Actions"로 설정해야 함

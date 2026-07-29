@@ -476,7 +476,7 @@
     return d.toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul", hour12: false });
   }
 
-  /* ---------- AI 뉴스 분석 로드 & 렌더 ---------- */
+  /* ---------- 뉴스 심리(간이) 로드 & 렌더 ---------- */
   const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const sentiClass = s => s === "긍정" ? "s-pos" : s === "부정" ? "s-neg" : "s-neu";
 
@@ -511,8 +511,8 @@
 
     card.innerHTML =
       `<div class="news-head">
-         <span class="news-title">🤖 AI 뉴스 분석</span>
-         <span class="news-meta">Claude${news.model ? " · " + esc(news.model) : ""}${upd ? " · " + upd + " 갱신" : ""}</span>
+         <span class="news-title">📰 뉴스 심리 (간이)</span>
+         <span class="news-meta">키워드 기반${upd ? " · " + upd + " 갱신" : ""}</span>
        </div>
        <div class="senti">
          <span class="senti-pill ${sentiClass(a.sentiment)}">${esc(a.sentiment)}</span>
@@ -521,7 +521,7 @@
        <p class="news-summary">${esc(a.summary)}</p>
        ${points ? `<ul class="kp">${points}</ul>` : ""}
        ${items ? `<p class="hl-title">주요 헤드라인</p><ul class="hls">${items}</ul>` : ""}
-       <p class="news-disc">Claude가 공개 뉴스 헤드라인을 요약·분석한 결과이며, 투자 자문이나 매매 권유가 아닙니다. 원문 링크로 사실관계를 직접 확인하세요.</p>`;
+       <p class="news-disc">최신 뉴스 헤드라인의 <b>키워드를 규칙 기반으로 집계</b>한 간이 심리이며(AI 분석 아님), 오판이 있을 수 있습니다. 투자 자문·매매 권유가 아니니 원문 링크로 사실관계를 직접 확인하세요.</p>`;
     card.hidden = false;
   }
 
