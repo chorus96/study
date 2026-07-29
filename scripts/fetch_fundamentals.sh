@@ -24,19 +24,59 @@ tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
 eps=""
 
 if [ "$MARKET" = "krx" ]; then
-  # ---------- 국내: DART 기본주당이익(최근 연도) ----------
-  if [ -z "${DART_API_KEY:-}" ] || [ -z "$CORP_CODE" ]; then
-    echo "PER: DART_API_KEY/CORP_CODE 미설정 → 건너뜀(${NAME})" >&2; exit 0
+  # ---------- 국내: 네이버 EPS(시세와 같은 계열이라 PER이 일관됨) → DART 폴백 ----------
+  ncode=$(curl -sS --max-time 30 -A "$UA" -w '%{http_code}' -o "$tmp" \
+    "https://m.stock.naver.com/api/stock/${NUMCODE}/integration" 2>/dev/null || echo 000)
+  echo "  · Naver integration HTTP ${ncode} (${NAME})" >&2
+  if [ "$ncode" = "200" ]; then
+    eps="$(python3 - "$tmp" "$DATA" <<'PY'
+import sys, json
+try:
+    j = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    print(""); sys.exit(0)
+infos = j.get("totalInfos") or []
+sys.stderr.write("  [Naver totalInfos] " + json.dumps(infos, ensure_ascii=False)[:700] + "\n")
+def num(x):
+    x = (x or "").replace(",", "").strip()
+    try:
+        return float(x)
+    except ValueError:
+        return None
+eps = per = None
+for it in infos:
+    c = (it.get("code") or "").lower()
+    k = (it.get("key") or "").strip().upper()
+    v = num(it.get("value"))
+    if v is None:
+        continue
+    if c == "eps" or k == "EPS":
+        eps = v
+    if c == "per" or k == "PER":
+        per = v
+# EPS가 없고 PER만 있으면 최근 종가로 유추(EPS = 종가 / PER)
+if eps is None and per not in (None, 0):
+    try:
+        d = json.load(open(sys.argv[2], encoding="utf-8"))
+        eps = d["points"][-1]["c"] / per
+    except Exception:
+        pass
+sys.stderr.write("  [Naver EPS] eps=%s per=%s\n" % (eps, per))
+print("" if eps is None else repr(eps))
+PY
+)"
   fi
-  years="$(python3 -c 'import datetime;y=datetime.datetime.now().year;print(" ".join(str(y-i) for i in range(1,4)))')"
-  echo "PER(DART EPS) 수집: ${NAME} corp=${CORP_CODE}"
-  : > "$tmp"
-  for y in $years; do
-    r="$(curl -sfL --max-time 30 -A "$UA" \
-      "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?crtfc_key=${DART_API_KEY}&corp_code=${CORP_CODE}&bsns_year=${y}&reprt_code=11011&fs_div=CFS" 2>/dev/null)" || continue
-    printf '%s\n' "$r" >> "$tmp"
-  done
-  eps="$(python3 - "$tmp" <<'PY'
+  # 네이버 실패 시 DART 기본주당이익으로 폴백
+  if [ -z "$eps" ] && [ -n "${DART_API_KEY:-}" ] && [ -n "$CORP_CODE" ]; then
+    years="$(python3 -c 'import datetime;y=datetime.datetime.now().year;print(" ".join(str(y-i) for i in range(1,4)))')"
+    echo "PER(DART EPS 폴백) 수집: ${NAME} corp=${CORP_CODE}" >&2
+    : > "$tmp"
+    for y in $years; do
+      r="$(curl -sfL --max-time 30 -A "$UA" \
+        "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json?crtfc_key=${DART_API_KEY}&corp_code=${CORP_CODE}&bsns_year=${y}&reprt_code=11011&fs_div=CFS" 2>/dev/null)" || continue
+      printf '%s\n' "$r" >> "$tmp"
+    done
+    eps="$(python3 - "$tmp" <<'PY'
 import sys, json
 
 def amt(s):
@@ -80,6 +120,7 @@ sys.stderr.write("  [EPS선택] year=%s eps=%s\n" % (best_year, best))
 print("" if best is None else repr(best))
 PY
 )"
+  fi
 else
   # ---------- 미국: FMP eps → Alpha Vantage OVERVIEW EPS ----------
   [ -z "$SYMBOL" ] && SYMBOL="$NAME"
