@@ -318,36 +318,6 @@
     <div class="chart-box"><div id="tip-macd" class="tip"></div><svg id="chart-macd" viewBox="0 0 340 140" preserveAspectRatio="none" role="img" aria-label="MACD 차트"></svg></div>
   </section>
 
-  <!-- INPUT -->
-  <details class="io" id="io">
-    <summary>내 데이터로 분석하기 <span class="chev">▾</span></summary>
-    <div class="io-body">
-      <p class="io-help">
-        네이버·증권사 앱 등에서 <b>일별 종가</b>를 복사해 아래에 붙여넣으세요.
-        숫자 사이의 쉼표·줄바꿈·공백·원화 기호는 자동으로 정리됩니다.
-        예: <code>178,500 181,000 179,200 …</code> (최소 30개 이상 권장, 60개 이상이면 MA60까지 계산)
-      </p>
-      <textarea id="ta" spellcheck="false" placeholder="예) 178500&#10;181000&#10;179200&#10;..."></textarea>
-      <div class="row">
-        <span class="seg-lbl">입력 순서</span>
-        <div class="seg" id="order" role="group" aria-label="입력 순서">
-          <button type="button" data-ord="old" aria-pressed="true">과거→최신</button>
-          <button type="button" data-ord="new" aria-pressed="false">최신→과거</button>
-        </div>
-      </div>
-      <div class="err" id="err"></div>
-      <div class="btns">
-        <button type="button" class="btn primary" id="run">분석하기</button>
-        <button type="button" class="btn" id="sample">샘플 불러오기</button>
-      </div>
-    </div>
-  </details>
-
-  <footer>
-    <strong>투자 참고용 계산 도구입니다.</strong> 기본값은 실제 시세가 아닌 <strong>임의로 생성한 예시 데이터</strong>이며,
-    정확한 분석을 위해 실제 종가를 직접 붙여넣어 사용하세요.
-    본 도구는 투자 자문·매매 권유가 아니며, 투자 판단과 책임은 이용자 본인에게 있습니다.
-  </footer>
 </div>
 
 <script>
@@ -443,14 +413,6 @@
       out.push(Math.round(px / 500) * 500);
     }
     return out;
-  }
-
-  /* ---------- 입력 파싱 ---------- */
-  function parseInput(text, order) {
-    const nums = (text.match(/-?\d[\d,]*\.?\d*/g) || [])
-      .map(s => parseFloat(s.replace(/,/g, "")))
-      .filter(v => isFinite(v) && v > 0);
-    return order === "new" ? nums.reverse() : nums;
   }
 
   /* ---------- 색상 ---------- */
@@ -882,32 +844,6 @@
   }
 
   /* ---------- 이벤트 ---------- */
-  let order = "old";
-  document.querySelectorAll("#order button").forEach(b => {
-    b.onclick = () => {
-      document.querySelectorAll("#order button").forEach(x => x.setAttribute("aria-pressed", "false"));
-      b.setAttribute("aria-pressed", "true"); order = b.dataset.ord;
-    };
-  });
-  document.getElementById("run").onclick = () => {
-    const err = document.getElementById("err");
-    const closes = parseInput(document.getElementById("ta").value, order);
-    if (closes.length < 5) { err.textContent = "숫자를 5개 이상 입력해 주세요. (권장 30개 이상)"; return; }
-    err.textContent = "";
-    const A = analyze(closes, { source: "manual" });
-    hoverIdx = null;
-    render(A);
-    document.getElementById("io").open = false;
-    document.querySelector(".hero").scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-  document.getElementById("sample").onclick = () => {
-    const s = sampleData(260);
-    document.getElementById("ta").value = s.join("\n");
-    document.querySelector('#order [data-ord="old"]').click();
-    document.getElementById("err").textContent = "";
-    hoverIdx = null;
-    render(analyze(s, { source: "sample" }));
-  };
   document.getElementById("refresh").onclick = async () => {
     const btn = document.getElementById("refresh");
     btn.disabled = true;
