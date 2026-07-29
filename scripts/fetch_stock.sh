@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # SK하이닉스(000660) 일별 종가를 받아 same-origin data.json으로 저장한다.
-# GitHub Actions 러너(외부망 개방)에서 실행된다. Yahoo Finance를 우선 사용하고
-# 실패 시 Stooq CSV로 폴백한다.
-set -euo pipefail
+# GitHub Actions 러너에서 실행된다. 여러 소스를 순서대로 시도하고, 각 시도의
+# HTTP 상태를 로그로 남긴다. (진단 가능하도록 -e 미사용)
+set -uo pipefail
 
-SYMBOL="${SYMBOL:-000660.KS}"
+SYMBOL="${SYMBOL:-000660.KS}"          # Yahoo 형식
+NUMCODE="${NUMCODE:-000660}"           # 숫자 코드
 NAME="${NAME:-SK하이닉스}"
 OUT="${OUT:-hynix-stock-analyzer/data.json}"
 RANGE="${RANGE:-6mo}"
@@ -15,31 +16,40 @@ mkdir -p "$(dirname "$OUT")"
 tmp="$(mktemp)"
 ok=0
 
+# curl 래퍼: HTTP 코드를 stdout으로 반환하고, 본문은 $tmp에 저장. 진단 로그 출력.
+fetch() { # $1=label $2=url [$3..=extra curl args]
+  local label="$1" url="$2"; shift 2
+  local code
+  code=$(curl -sS -m 30 -A "$UA" -H "Accept: application/json, text/csv, */*" \
+              -w '%{http_code}' -o "$tmp" "$@" "$url" 2>/tmp/curl_err || true)
+  [ -z "$code" ] && code="000"
+  echo "  · ${label}: HTTP ${code}, $(wc -c <"$tmp" 2>/dev/null || echo 0) bytes $( [ -s /tmp/curl_err ] && echo "($(tr '\n' ' ' </tmp/curl_err | cut -c1-80))" )"
+  printf '%s' "$code"
+}
+
+echo "데이터 수집 시작 (symbol=${SYMBOL}, code=${NUMCODE})"
+
 # ---------- 1) Yahoo Finance ----------
 for host in query1.finance.yahoo.com query2.finance.yahoo.com; do
-  url="https://${host}/v8/finance/chart/${SYMBOL}?range=${RANGE}&interval=1d"
-  if curl -sfL --max-time 30 -A "$UA" "$url" -o "$tmp"; then
-    if jq -e '.chart.result[0].timestamp and .chart.result[0].indicators.quote[0].close' "$tmp" >/dev/null 2>&1; then
-      jq --arg name "$NAME" --arg updated "$UPDATED" '
-        .chart.result[0] as $r
-        | { symbol: $r.meta.symbol, name: $name, currency: $r.meta.currency,
-            price: $r.meta.regularMarketPrice, marketTime: $r.meta.regularMarketTime,
-            updated: $updated,
-            points: ([ $r.timestamp, $r.indicators.quote[0].close ]
-                     | transpose | map(select(.[1] != null) | { t: .[0], c: .[1] })) }
-      ' "$tmp" > "$OUT"
-      ok=1; echo "출처: Yahoo Finance (${host})"; break
-    fi
+  code=$(fetch "Yahoo(${host})" "https://${host}/v8/finance/chart/${SYMBOL}?range=${RANGE}&interval=1d")
+  if [ "$code" = "200" ] && jq -e '.chart.result[0].timestamp and .chart.result[0].indicators.quote[0].close' "$tmp" >/dev/null 2>&1; then
+    jq --arg name "$NAME" --arg updated "$UPDATED" '
+      .chart.result[0] as $r
+      | { symbol: $r.meta.symbol, name: $name, currency: $r.meta.currency,
+          price: $r.meta.regularMarketPrice, marketTime: $r.meta.regularMarketTime, updated: $updated,
+          points: ([ $r.timestamp, $r.indicators.quote[0].close ]
+                   | transpose | map(select(.[1] != null) | { t: .[0], c: .[1] })) }' "$tmp" > "$OUT"
+    ok=1; echo "→ 성공: Yahoo Finance (${host})"; break
   fi
 done
 
-# ---------- 2) Stooq CSV 폴백 ----------
+# ---------- 2) Stooq CSV ----------
 if [ "$ok" -ne 1 ]; then
-  url="https://stooq.com/q/d/l/?s=000660.kr&i=d"
-  if curl -sfL --max-time 30 -A "$UA" "$url" -o "$tmp" && head -1 "$tmp" | grep -qi "date"; then
-    python3 - "$tmp" "$OUT" "$NAME" "$UPDATED" <<'PY'
+  code=$(fetch "Stooq" "https://stooq.com/q/d/l/?s=${NUMCODE}.kr&i=d")
+  if [ "$code" = "200" ] && head -1 "$tmp" | grep -qi "date"; then
+    if python3 - "$tmp" "$OUT" "$NAME" "$UPDATED" "$NUMCODE" <<'PY'
 import sys, json, csv, datetime
-src, out, name, updated = sys.argv[1:5]
+src, out, name, updated, numcode = sys.argv[1:6]
 rows = []
 with open(src, newline="") as f:
     for row in csv.DictReader(f):
@@ -53,23 +63,52 @@ with open(src, newline="") as f:
 rows = rows[-140:]
 if len(rows) < 5:
     sys.exit("Stooq: 데이터 부족")
-data = {"symbol": "000660.KR", "name": name, "currency": "KRW",
-        "price": rows[-1]["c"], "marketTime": rows[-1]["t"],
-        "updated": updated, "points": rows}
-with open(out, "w", encoding="utf-8") as g:
-    json.dump(data, g, ensure_ascii=False)
+json.dump({"symbol": numcode + ".KR", "name": name, "currency": "KRW",
+           "price": rows[-1]["c"], "marketTime": rows[-1]["t"],
+           "updated": updated, "points": rows},
+          open(out, "w", encoding="utf-8"), ensure_ascii=False)
+print("  Stooq rows:", len(rows))
 PY
-    ok=1; echo "출처: Stooq (폴백)"
+    then ok=1; echo "→ 성공: Stooq"; fi
   fi
 fi
 
-rm -f "$tmp"
+# ---------- 3) Twelve Data (무료 API 키, 클라우드 IP 허용) ----------
+# GitHub Secret TWELVEDATA_API_KEY 가 설정된 경우에만 시도.
+if [ "$ok" -ne 1 ] && [ -n "${TWELVEDATA_API_KEY:-}" ]; then
+  code=$(fetch "TwelveData" "https://api.twelvedata.com/time_series?symbol=${NUMCODE}&exchange=KRX&interval=1day&outputsize=140&order=ASC&apikey=${TWELVEDATA_API_KEY}")
+  if [ "$code" = "200" ] && jq -e '.values and (.values|length>0)' "$tmp" >/dev/null 2>&1; then
+    jq --arg name "$NAME" --arg updated "$UPDATED" --arg code "$NUMCODE" '
+      { symbol: ($code + ".KRX"), name: $name, currency: "KRW",
+        price: (.values | last | .close | tonumber),
+        marketTime: (.values | last | .datetime | (strptime("%Y-%m-%d") | mktime)),
+        updated: $updated,
+        points: [ .values[] | { t: (.datetime | strptime("%Y-%m-%d") | mktime), c: (.close | tonumber) } ] }' "$tmp" > "$OUT"
+    ok=1; echo "→ 성공: Twelve Data"
+  fi
+fi
+
+# ---------- 4) Financial Modeling Prep (무료 API 키) ----------
+if [ "$ok" -ne 1 ] && [ -n "${FMP_API_KEY:-}" ]; then
+  code=$(fetch "FMP" "https://financialmodelingprep.com/api/v3/historical-price-full/${SYMBOL}?serietype=line&apikey=${FMP_API_KEY}")
+  if [ "$code" = "200" ] && jq -e '.historical and (.historical|length>0)' "$tmp" >/dev/null 2>&1; then
+    jq --arg name "$NAME" --arg updated "$UPDATED" --arg sym "$SYMBOL" '
+      { symbol: $sym, name: $name, currency: "KRW",
+        price: (.historical[0].close),
+        marketTime: (.historical[0].date | strptime("%Y-%m-%d") | mktime),
+        updated: $updated,
+        points: [ .historical | reverse | .[-140:][] | { t: (.date | strptime("%Y-%m-%d") | mktime), c: .close } ] }' "$tmp" > "$OUT"
+    ok=1; echo "→ 성공: Financial Modeling Prep"
+  fi
+fi
+
+rm -f "$tmp" /tmp/curl_err
 
 if [ "$ok" -ne 1 ]; then
-  echo "오류: 어떤 데이터 소스에서도 시세를 가져오지 못했습니다." >&2
+  echo "오류: 모든 데이터 소스 실패. 위 HTTP 코드를 확인하세요." >&2
+  echo "  · 403 = 해당 호스트가 GitHub Actions(Azure) IP를 차단함 → 무료 API 키 방식(TwelveData/FMP) 사용 권장." >&2
   exit 1
 fi
 
-# 검증
 jq -e '.points | length >= 5' "$OUT" >/dev/null || { echo "오류: 유효 포인트 부족" >&2; exit 1; }
 echo "생성 완료: ${OUT}  포인트=$(jq '.points|length' "$OUT")  현재가=$(jq -r '.price' "$OUT")  갱신=${UPDATED}"
