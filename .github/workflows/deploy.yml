@@ -144,22 +144,24 @@ jobs:
           NEWS_OUT: 'stock-analyzer/nvidia/news.json'
 
       # ── 재무지표(PER 일별 추이): 국내 종목만 pykrx로 수집 (무키). ──
-      - name: Fetch SK Hynix fundamentals (PER via DART EPS)
+      - name: Fetch SK Hynix fundamentals (PER via Naver EPS)
         continue-on-error: true
         run: bash scripts/fetch_fundamentals.sh
         env:
           NAME: 'SK하이닉스'
+          NUMCODE: '000660'
           MARKET: 'krx'
           CURRENCY: 'KRW'
           CORP_CODE: '00164779'
           OUT: 'stock-analyzer/hynix/fundamentals.json'
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
 
-      - name: Fetch Samsung fundamentals (PER via DART EPS)
+      - name: Fetch Samsung fundamentals (PER via Naver EPS)
         continue-on-error: true
         run: bash scripts/fetch_fundamentals.sh
         env:
           NAME: '삼성전자'
+          NUMCODE: '005930'
           MARKET: 'krx'
           CURRENCY: 'KRW'
           CORP_CODE: '00126380'

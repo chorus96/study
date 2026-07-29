@@ -11,6 +11,7 @@ set -uo pipefail
 OUT="${OUT:-stock-analyzer/hynix/fundamentals.json}"
 NAME="${NAME:-SK하이닉스}"
 SYMBOL="${SYMBOL:-}"
+NUMCODE="${NUMCODE:-}"            # 국내 종목 6자리 코드(네이버 EPS 조회용)
 MARKET="${MARKET:-krx}"
 CURRENCY="${CURRENCY:-KRW}"
 CORP_CODE="${CORP_CODE:-}"
