@@ -1,0 +1,929 @@
+<meta charset="utf-8" />
+<title>SK하이닉스 기술적 분석</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
+<style>
+  :root {
+    --bg: #F5F6F8;
+    --surface: #FFFFFF;
+    --surface-2: #F0F2F6;
+    --border: #E3E6EC;
+    --border-strong: #D3D7E0;
+    --ink: #10141C;
+    --ink-2: #464D5D;
+    --muted: #8A90A0;
+    --up: #E5343F;      /* 상승 = 빨강 (한국 시장 관례) */
+    --up-soft: #FDEBEC;
+    --down: #2563EB;    /* 하락 = 파랑 */
+    --down-soft: #E8EFFD;
+    --flat: #6C7382;
+    --warn: #B57F00;
+    --accent: #14171E;  /* 주요 액션(중립 그래파이트) */
+    --accent-ink: #FFFFFF;
+    --focus: #4F6BFF;
+    --ma5: #E8850C;
+    --ma20: #6D5FE0;
+    --ma60: #0E9C8A;
+    --grid: rgba(16, 20, 28, 0.07);
+    --band: rgba(109, 95, 224, 0.10);
+    --shadow: 0 1px 2px rgba(16,20,28,.05), 0 8px 24px rgba(16,20,28,.05);
+    --r: 16px;
+    --r-sm: 11px;
+    --fs-display: 2.55rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0B0D12;
+      --surface: #14171E;
+      --surface-2: #1B1F28;
+      --border: #262B36;
+      --border-strong: #333A47;
+      --ink: #EDEFF4;
+      --ink-2: #A7AEBE;
+      --muted: #6C7382;
+      --up: #FF5A63;
+      --up-soft: rgba(255,90,99,.14);
+      --down: #5B8DEF;
+      --down-soft: rgba(91,141,239,.16);
+      --flat: #8A91A1;
+      --warn: #E0A83A;
+      --accent: #EDEFF4;
+      --accent-ink: #14171E;
+      --focus: #6F87FF;
+      --ma5: #C9780D;
+      --ma20: #8B7DF0;
+      --ma60: #12A08C;
+      --grid: rgba(237, 239, 244, 0.08);
+      --band: rgba(139, 125, 240, 0.14);
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg:#F5F6F8;--surface:#FFFFFF;--surface-2:#F0F2F6;--border:#E3E6EC;--border-strong:#D3D7E0;
+    --ink:#10141C;--ink-2:#464D5D;--muted:#8A90A0;--up:#E5343F;--up-soft:#FDEBEC;--down:#2563EB;
+    --down-soft:#E8EFFD;--flat:#6C7382;--warn:#B57F00;--accent:#14171E;--accent-ink:#FFFFFF;
+    --focus:#4F6BFF;--ma5:#E8850C;--ma20:#6D5FE0;--ma60:#0E9C8A;--grid:rgba(16,20,28,.07);
+    --band:rgba(109,95,224,.10);
+  }
+  :root[data-theme="dark"] {
+    --bg:#0B0D12;--surface:#14171E;--surface-2:#1B1F28;--border:#262B36;--border-strong:#333A47;
+    --ink:#EDEFF4;--ink-2:#A7AEBE;--muted:#6C7382;--up:#FF5A63;--up-soft:rgba(255,90,99,.14);
+    --down:#5B8DEF;--down-soft:rgba(91,141,239,.16);--flat:#8A91A1;--warn:#E0A83A;--accent:#EDEFF4;
+    --accent-ink:#14171E;--focus:#6F87FF;--ma5:#C9780D;--ma20:#8B7DF0;--ma60:#12A08C;
+    --grid:rgba(237,239,244,.08);--band:rgba(139,125,240,.14);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard",
+      "Malgun Gothic", "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+
+  .wrap {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: max(16px, env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* ---- Header ---- */
+  header { display: flex; flex-direction: column; gap: 8px; padding: 6px 2px 2px; }
+  .ticker-row { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+  .ticker { font-size: 1.28rem; font-weight: 750; letter-spacing: -0.02em; }
+  .ticker-code { font-size: .82rem; color: var(--muted); font-weight: 600; }
+  .kicker { font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  .badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .badge {
+    font-size: .68rem; font-weight: 650; padding: 3px 9px; border-radius: 999px;
+    background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--border);
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .badge b { color: var(--ink); font-weight: 750; }
+  button.badge { cursor: pointer; font-family: inherit; }
+  button.badge:active { transform: translateY(1px); }
+  #badge-upd { color: var(--up); }
+  #badge-upd .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--up); display: inline-block; }
+
+  /* ---- Card ---- */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    box-shadow: var(--shadow);
+    padding: 18px;
+  }
+  .card-title {
+    font-size: .74rem; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); font-weight: 700; margin: 0 0 12px;
+  }
+
+  /* ---- Hero price ---- */
+  .hero .price-line { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+  .price { font-size: var(--fs-display); font-weight: 780; letter-spacing: -0.03em; line-height: 1; }
+  .price .won { font-size: 1.05rem; font-weight: 600; color: var(--muted); margin-left: 4px; letter-spacing: 0; }
+  .chg-pill {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px 6px 9px;
+    border-radius: 10px; font-weight: 700; font-size: .95rem; margin-bottom: 4px;
+  }
+  .chg-pill.up { color: var(--up); background: var(--up-soft); }
+  .chg-pill.down { color: var(--down); background: var(--down-soft); }
+  .chg-pill.flat { color: var(--flat); background: var(--surface-2); }
+  .arrow { font-size: .78em; }
+  .hero-sub { display: flex; gap: 18px; margin-top: 14px; flex-wrap: wrap; }
+  .hero-sub .item { display: flex; flex-direction: column; gap: 2px; }
+  .hero-sub .lbl { font-size: .7rem; color: var(--muted); font-weight: 600; }
+  .hero-sub .val { font-size: .95rem; font-weight: 650; }
+
+  /* ---- Verdict ---- */
+  .verdict-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .verdict-tag {
+    font-size: 1.15rem; font-weight: 780; letter-spacing: -0.01em; display: inline-flex;
+    align-items: center; gap: 8px;
+  }
+  .dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+  .score-num { font-size: 1.35rem; font-weight: 780; }
+  .score-num small { font-size: .72rem; color: var(--muted); font-weight: 600; }
+  .meter { height: 8px; border-radius: 999px; background: var(--surface-2); margin: 14px 0 4px; position: relative; overflow: hidden; }
+  .meter-fill { position: absolute; top: 0; bottom: 0; border-radius: 999px; }
+  .meter-mid { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 2px; background: var(--border-strong); }
+  .scale-lbls { display: flex; justify-content: space-between; font-size: .66rem; color: var(--muted); font-weight: 600; }
+  .factors { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .factors li { display: flex; align-items: center; gap: 10px; font-size: .9rem; }
+  .fsign {
+    flex: none; width: 26px; height: 24px; border-radius: 7px; display: grid; place-items: center;
+    font-size: .74rem; font-weight: 800; letter-spacing: -.02em;
+  }
+  .fsign.pos { color: var(--up); background: var(--up-soft); }
+  .fsign.neg { color: var(--down); background: var(--down-soft); }
+  .fsign.neu { color: var(--flat); background: var(--surface-2); }
+  .factors .fname { font-weight: 650; }
+  .factors .fdesc { color: var(--ink-2); }
+
+  /* ---- Indicator chips ---- */
+  .chips { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .chip {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm);
+    padding: 12px 13px; display: flex; flex-direction: column; gap: 3px;
+  }
+  .chip .clbl { font-size: .7rem; color: var(--muted); font-weight: 650; display: flex; align-items: center; gap: 5px; }
+  .chip .cval { font-size: 1.25rem; font-weight: 750; letter-spacing: -.02em; }
+  .chip .cstate { font-size: .74rem; font-weight: 700; }
+  .st-up { color: var(--up); } .st-down { color: var(--down); } .st-flat { color: var(--flat); } .st-warn { color: var(--warn); }
+
+  /* ---- Charts ---- */
+  .chart-card { padding: 16px 12px 12px; }
+  .chart-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 6px; margin-bottom: 8px; }
+  .chart-head h3 { margin: 0; font-size: .95rem; font-weight: 720; letter-spacing: -.01em; }
+  .legend { display: flex; gap: 6px; flex-wrap: wrap; }
+  .lg {
+    display: inline-flex; align-items: center; gap: 5px; font-size: .72rem; font-weight: 650;
+    padding: 4px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2);
+    cursor: pointer; user-select: none; color: var(--ink-2);
+  }
+  .lg[aria-pressed="false"] { opacity: .42; }
+  .lg .sw { width: 13px; height: 3px; border-radius: 2px; }
+  .lg .sw.dash { background-image: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 7px); height: 2px; }
+  svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
+  .axis-txt { font-size: 9.5px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+  .gridline { stroke: var(--grid); stroke-width: 1; }
+  .tip {
+    position: absolute; pointer-events: none; z-index: 5; background: var(--surface);
+    border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow);
+    padding: 8px 10px; font-size: .74rem; min-width: 130px; opacity: 0; transition: opacity .08s; transform: translate(-50%, 0);
+  }
+  .tip .tdate { color: var(--muted); font-weight: 650; margin-bottom: 5px; font-size: .68rem; }
+  .tip .trow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .tip .trow .k { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-2); }
+  .tip .trow .k .sw { width: 9px; height: 9px; border-radius: 2px; }
+  .tip .trow .v { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .chart-box { position: relative; }
+
+  /* ---- Input ---- */
+  details.io { border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); overflow: hidden; box-shadow: var(--shadow); }
+  details.io > summary {
+    list-style: none; cursor: pointer; padding: 15px 18px; font-weight: 700; font-size: .95rem;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  details.io > summary::-webkit-details-marker { display: none; }
+  .chev { transition: transform .2s; color: var(--muted); }
+  details.io[open] .chev { transform: rotate(180deg); }
+  .io-body { padding: 0 18px 18px; display: flex; flex-direction: column; gap: 12px; }
+  .io-help { font-size: .8rem; color: var(--ink-2); line-height: 1.55; }
+  .io-help code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; font-size: .92em; }
+  textarea {
+    width: 100%; min-height: 110px; resize: vertical; border-radius: 12px; border: 1px solid var(--border-strong);
+    background: var(--surface-2); color: var(--ink); padding: 12px; font-size: .9rem; line-height: 1.6;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums;
+  }
+  textarea:focus, .seg button:focus-visible, .btn:focus-visible, .lg:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--focus); outline-offset: 2px;
+  }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 3px; gap: 2px; }
+  .seg button {
+    border: none; background: transparent; color: var(--ink-2); font-weight: 650; font-size: .82rem;
+    padding: 6px 12px; border-radius: 8px; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  .seg-lbl { font-size: .78rem; color: var(--muted); font-weight: 650; }
+  .btns { display: flex; gap: 10px; }
+  .btn {
+    flex: 1; border: 1px solid var(--border-strong); background: var(--surface); color: var(--ink);
+    font-weight: 700; font-size: .92rem; padding: 12px; border-radius: 12px; cursor: pointer;
+  }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .btn:active { transform: translateY(1px); }
+  .err { color: var(--up); font-size: .8rem; font-weight: 650; min-height: 1em; }
+
+  footer { font-size: .74rem; color: var(--muted); line-height: 1.6; padding: 4px 4px 0; text-align: center; }
+  footer strong { color: var(--ink-2); }
+
+  @media (max-width: 360px) { :root { --fs-display: 2.15rem; } .chips { grid-template-columns: 1fr; } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="kicker">기술적 분석 · Technical Analysis</span>
+    <div class="ticker-row">
+      <span class="ticker">SK하이닉스</span>
+      <span class="ticker-code">KRX 000660</span>
+    </div>
+    <div class="badges">
+      <span class="badge" id="badge-src">데이터 <b>예시(샘플)</b></span>
+      <span class="badge" id="badge-upd" hidden></span>
+      <button class="badge" id="refresh" type="button" hidden>🔄 새로고침</button>
+      <span class="badge">기간 <b id="badge-n">–</b></span>
+      <span class="badge">RSI 14 · MACD 12·26·9 · BB 20·2σ</span>
+    </div>
+  </header>
+
+  <!-- HERO -->
+  <section class="card hero">
+    <div class="price-line">
+      <div><span class="price num" id="px">–</span><span class="won">원</span></div>
+      <span class="chg-pill flat" id="chg"><span class="arrow">–</span><span class="num" id="chg-abs">0</span><span class="num" id="chg-pct">(0.00%)</span></span>
+    </div>
+    <div class="hero-sub">
+      <div class="item"><span class="lbl">기간 고가</span><span class="val num" id="hi">–</span></div>
+      <div class="item"><span class="lbl">기간 저가</span><span class="val num" id="lo">–</span></div>
+      <div class="item"><span class="lbl">20일 변동성(σ)</span><span class="val num" id="vol">–</span></div>
+    </div>
+  </section>
+
+  <!-- VERDICT -->
+  <section class="card">
+    <p class="card-title">종합 신호</p>
+    <div class="verdict-head">
+      <span class="verdict-tag"><span class="dot" id="v-dot"></span><span id="v-tag">–</span></span>
+      <span class="score-num num"><span id="v-score">0</span><small> / ±8</small></span>
+    </div>
+    <div class="meter"><span class="meter-fill" id="v-fill"></span><span class="meter-mid"></span></div>
+    <div class="scale-lbls"><span>매도 우위</span><span>중립</span><span>매수 우위</span></div>
+    <ul class="factors" id="factors"></ul>
+  </section>
+
+  <!-- INDICATOR CHIPS -->
+  <section class="chips" id="chips"></section>
+
+  <!-- PRICE CHART -->
+  <section class="card chart-card">
+    <div class="chart-head">
+      <h3>가격 · 이동평균 · 볼린저밴드</h3>
+    </div>
+    <div class="legend" id="price-legend"></div>
+    <div class="chart-box"><div id="tip-price" class="tip"></div><svg id="chart-price" viewBox="0 0 340 210" preserveAspectRatio="none" role="img" aria-label="가격 및 이동평균 차트"></svg></div>
+  </section>
+
+  <!-- RSI CHART -->
+  <section class="card chart-card">
+    <div class="chart-head"><h3>RSI (14)</h3><span class="seg-lbl">과매수 70 · 과매도 30</span></div>
+    <div class="chart-box"><div id="tip-rsi" class="tip"></div><svg id="chart-rsi" viewBox="0 0 340 130" preserveAspectRatio="none" role="img" aria-label="RSI 차트"></svg></div>
+  </section>
+
+  <!-- MACD CHART -->
+  <section class="card chart-card">
+    <div class="chart-head"><h3>MACD (12·26·9)</h3></div>
+    <div class="legend" id="macd-legend"></div>
+    <div class="chart-box"><div id="tip-macd" class="tip"></div><svg id="chart-macd" viewBox="0 0 340 140" preserveAspectRatio="none" role="img" aria-label="MACD 차트"></svg></div>
+  </section>
+
+  <!-- INPUT -->
+  <details class="io" id="io">
+    <summary>내 데이터로 분석하기 <span class="chev">▾</span></summary>
+    <div class="io-body">
+      <p class="io-help">
+        네이버·증권사 앱 등에서 <b>일별 종가</b>를 복사해 아래에 붙여넣으세요.
+        숫자 사이의 쉼표·줄바꿈·공백·원화 기호는 자동으로 정리됩니다.
+        예: <code>178,500 181,000 179,200 …</code> (최소 30개 이상 권장, 60개 이상이면 MA60까지 계산)
+      </p>
+      <textarea id="ta" spellcheck="false" placeholder="예) 178500&#10;181000&#10;179200&#10;..."></textarea>
+      <div class="row">
+        <span class="seg-lbl">입력 순서</span>
+        <div class="seg" id="order" role="group" aria-label="입력 순서">
+          <button type="button" data-ord="old" aria-pressed="true">과거→최신</button>
+          <button type="button" data-ord="new" aria-pressed="false">최신→과거</button>
+        </div>
+      </div>
+      <div class="err" id="err"></div>
+      <div class="btns">
+        <button type="button" class="btn primary" id="run">분석하기</button>
+        <button type="button" class="btn" id="sample">샘플 불러오기</button>
+      </div>
+    </div>
+  </details>
+
+  <footer>
+    <strong>투자 참고용 계산 도구입니다.</strong> 기본값은 실제 시세가 아닌 <strong>임의로 생성한 예시 데이터</strong>이며,
+    정확한 분석을 위해 실제 종가를 직접 붙여넣어 사용하세요.
+    본 도구는 투자 자문·매매 권유가 아니며, 투자 판단과 책임은 이용자 본인에게 있습니다.
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- 지표 계산 ---------- */
+  function sma(a, p) {
+    const out = Array(a.length).fill(null);
+    let sum = 0;
+    for (let i = 0; i < a.length; i++) {
+      sum += a[i];
+      if (i >= p) sum -= a[i - p];
+      if (i >= p - 1) out[i] = sum / p;
+    }
+    return out;
+  }
+  function ema(a, p) {
+    const out = Array(a.length).fill(null);
+    const k = 2 / (p + 1);
+    let prev;
+    for (let i = 0; i < a.length; i++) {
+      prev = i === 0 ? a[i] : a[i] * k + prev * (1 - k);
+      out[i] = prev;
+    }
+    return out;
+  }
+  function rsi(a, p) {
+    const out = Array(a.length).fill(null);
+    if (a.length <= p) return out;
+    let g = 0, l = 0;
+    for (let i = 1; i <= p; i++) {
+      const d = a[i] - a[i - 1];
+      if (d >= 0) g += d; else l -= d;
+    }
+    let ag = g / p, al = l / p;
+    out[p] = al === 0 ? 100 : 100 - 100 / (1 + ag / al);
+    for (let i = p + 1; i < a.length; i++) {
+      const d = a[i] - a[i - 1];
+      const gain = d > 0 ? d : 0, loss = d < 0 ? -d : 0;
+      ag = (ag * (p - 1) + gain) / p;
+      al = (al * (p - 1) + loss) / p;
+      out[i] = al === 0 ? 100 : 100 - 100 / (1 + ag / al);
+    }
+    return out;
+  }
+  function macd(a) {
+    const f = ema(a, 12), s = ema(a, 26);
+    const line = a.map((_, i) => f[i] - s[i]);
+    const sig = ema(line, 9);
+    const hist = line.map((v, i) => v - sig[i]);
+    return { line, sig, hist };
+  }
+  function bollinger(a, p, mult) {
+    const mid = sma(a, p);
+    const up = Array(a.length).fill(null), lo = Array(a.length).fill(null);
+    for (let i = p - 1; i < a.length; i++) {
+      let sq = 0;
+      for (let j = i - p + 1; j <= i; j++) sq += (a[j] - mid[i]) ** 2;
+      const sd = Math.sqrt(sq / p);
+      up[i] = mid[i] + mult * sd;
+      lo[i] = mid[i] - mult * sd;
+    }
+    return { mid, up, lo };
+  }
+  function stdev(a, p) {
+    if (a.length < p) return null;
+    const s = a.slice(-p);
+    const m = s.reduce((x, y) => x + y, 0) / p;
+    return Math.sqrt(s.reduce((x, y) => x + (y - m) ** 2, 0) / p);
+  }
+
+  /* ---------- 포맷 ---------- */
+  const fmt = n => n == null || isNaN(n) ? "–" : Math.round(n).toLocaleString("ko-KR");
+  const fmt1 = n => n == null || isNaN(n) ? "–" : n.toLocaleString("ko-KR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+  /* ---------- 샘플 데이터 (임의 생성, 실제 시세 아님) ---------- */
+  function sampleData(n) {
+    // 시드 고정 PRNG(mulberry32)로 재현 가능한 예시 시세 생성
+    let t = 0x9e3779b9;
+    const rnd = () => {
+      t |= 0; t = (t + 0x6d2b79f5) | 0;
+      let r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+    const out = [];
+    let px = 150000;
+    for (let i = 0; i < n; i++) {
+      const drift = 260 * Math.sin(i / 17) + 90;            // 완만한 추세
+      const shock = (rnd() - 0.5) * 5200;                   // 일간 변동
+      px = Math.max(60000, px + drift + shock);
+      out.push(Math.round(px / 100) * 100);
+    }
+    return out;
+  }
+
+  /* ---------- 입력 파싱 ---------- */
+  function parseInput(text, order) {
+    const nums = (text.match(/-?\d[\d,]*\.?\d*/g) || [])
+      .map(s => parseFloat(s.replace(/,/g, "")))
+      .filter(v => isFinite(v) && v > 0);
+    return order === "new" ? nums.reverse() : nums;
+  }
+
+  /* ---------- 색상 ---------- */
+  const cssv = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+
+  /* ---------- 상태 ---------- */
+  let state = { series: { ma5: true, ma20: true, ma60: true, bb: true }, macdSeries: { line: true, sig: true } };
+  let hoverIdx = null;
+
+  /* ---------- 실시간 데이터 로드 (GitHub Pages 등 same-origin) ---------- */
+  async function loadLive() {
+    try {
+      const res = await fetch("./data.json", { cache: "no-store" });
+      if (!res.ok) return null;
+      const j = await res.json();
+      const pts = j.points || [];
+      const closes = pts.map(p => p.c).filter(v => isFinite(v) && v > 0);
+      if (closes.length < 5) return null;
+      const dates = pts.map(p => {
+        const d = new Date(p.t * 1000);
+        return d.toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit", timeZone: "Asia/Seoul" });
+      });
+      return { closes, dates, updated: j.updated || null, marketTime: j.marketTime || null,
+        name: j.name || "SK하이닉스", symbol: j.symbol || "000660.KS" };
+    } catch (e) { return null; }
+  }
+
+  function fmtUpdated(iso, unix) {
+    let d = null;
+    if (iso) d = new Date(iso);          // 데이터 수집(갱신) 시각 우선
+    else if (unix) d = new Date(unix * 1000);
+    if (!d || isNaN(d)) return "";
+    return d.toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul", hour12: false });
+  }
+
+  /* ---------- 메인 계산 & 렌더 ---------- */
+  function analyze(closes, meta) {
+    meta = meta || { source: "sample" };
+    if (closes.length < 5) return null;
+    const ma5 = sma(closes, 5), ma20 = sma(closes, 20), ma60 = sma(closes, 60);
+    const r = rsi(closes, 14);
+    const m = macd(closes);
+    const bb = bollinger(closes, 20, 2);
+    const i = closes.length - 1;
+    const price = closes[i], prev = closes[i - 1];
+    const chg = price - prev, chgPct = prev ? (chg / prev) * 100 : 0;
+
+    // ---- 신호 스코어 ----
+    const F = [];
+    if (ma5[i] != null && ma20[i] != null && ma60[i] != null) {
+      if (ma5[i] > ma20[i] && ma20[i] > ma60[i]) F.push(["이평선 배열", "MA5 > MA20 > MA60 정배열", 2]);
+      else if (ma5[i] < ma20[i] && ma20[i] < ma60[i]) F.push(["이평선 배열", "MA5 < MA20 < MA60 역배열", -2]);
+      else F.push(["이평선 배열", "혼조 배열", 0]);
+    } else if (ma5[i] != null && ma20[i] != null) {
+      F.push(["이평선 배열", ma5[i] > ma20[i] ? "단기선이 위 (MA60 부족)" : "단기선이 아래 (MA60 부족)", ma5[i] > ma20[i] ? 1 : -1]);
+    }
+    if (ma20[i] != null) F.push(["20일선 대비", price > ma20[i] ? "종가가 20일선 위" : "종가가 20일선 아래", price > ma20[i] ? 1 : -1]);
+    if (r[i] != null) {
+      if (r[i] >= 70) F.push(["RSI", `과매수 구간 (${r[i].toFixed(0)})`, -1]);
+      else if (r[i] <= 30) F.push(["RSI", `과매도 구간 (${r[i].toFixed(0)}) · 반등 가능`, 1]);
+      else F.push(["RSI", `중립 (${r[i].toFixed(0)})`, 0]);
+    }
+    F.push(["MACD", m.hist[i] >= 0 ? "히스토그램 (+) 상승 우위" : "히스토그램 (−) 하락 우위", m.hist[i] >= 0 ? 1 : -1]);
+    F.push(["MACD 교차", m.line[i] >= m.sig[i] ? "시그널선 상향" : "시그널선 하향", m.line[i] >= m.sig[i] ? 1 : -1]);
+    if (bb.up[i] != null) {
+      if (price > bb.up[i]) F.push(["볼린저밴드", "상단 이탈 · 과열", -1]);
+      else if (price < bb.lo[i]) F.push(["볼린저밴드", "하단 이탈 · 낙폭과대", 1]);
+      else F.push(["볼린저밴드", "밴드 내부", 0]);
+    }
+    const score = F.reduce((s, f) => s + f[2], 0);
+    let tag, key;
+    if (score >= 3) { tag = "매수 우위"; key = "up"; }
+    else if (score <= -3) { tag = "매도 우위"; key = "down"; }
+    else { tag = "중립"; key = "flat"; }
+
+    return { closes, ma5, ma20, ma60, rsi: r, macd: m, bb, price, chg, chgPct,
+      hi: Math.max(...closes), lo: Math.min(...closes), sigma: stdev(closes, 20),
+      factors: F, score, tag, key, n: closes.length,
+      source: meta.source, dates: meta.dates || null, updated: meta.updated || null,
+      marketTime: meta.marketTime || null, name: meta.name || "SK하이닉스", symbol: meta.symbol || "000660.KS" };
+  }
+
+  function render(A) {
+    if (!A) return;
+    overlays = [];
+    // 헤더 배지
+    document.getElementById("badge-n").textContent = A.n + "일";
+    const bsrc = document.getElementById("badge-src");
+    const srcLabel = { live: "실시간(지연)", manual: "직접 입력", sample: "예시(샘플)" }[A.source] || "예시(샘플)";
+    bsrc.innerHTML = "데이터 <b>" + srcLabel + "</b>";
+    const bupd = document.getElementById("badge-upd");
+    const refresh = document.getElementById("refresh");
+    if (A.source === "live") {
+      const t = fmtUpdated(A.updated, A.marketTime);
+      bupd.innerHTML = '<span class="live-dot"></span>' + (t ? t + " 갱신" : "실시간");
+      bupd.hidden = false;
+      refresh.hidden = false;
+    } else {
+      bupd.hidden = true;
+      refresh.hidden = true;
+    }
+
+    // 히어로
+    document.getElementById("px").textContent = fmt(A.price);
+    const up = A.chg > 0, dn = A.chg < 0;
+    const pill = document.getElementById("chg");
+    pill.className = "chg-pill " + (up ? "up" : dn ? "down" : "flat");
+    pill.querySelector(".arrow").textContent = up ? "▲" : dn ? "▼" : "―";
+    document.getElementById("chg-abs").textContent = fmt(Math.abs(A.chg));
+    document.getElementById("chg-pct").textContent = `(${A.chgPct >= 0 ? "+" : "−"}${Math.abs(A.chgPct).toFixed(2)}%)`;
+    document.getElementById("hi").textContent = fmt(A.hi);
+    document.getElementById("lo").textContent = fmt(A.lo);
+    document.getElementById("vol").textContent = A.sigma ? fmt(A.sigma) + "원" : "–";
+
+    // 종합 신호
+    document.getElementById("v-tag").textContent = A.tag;
+    document.getElementById("v-score").textContent = (A.score > 0 ? "+" : "") + A.score;
+    const col = A.key === "up" ? cssv("--up") : A.key === "down" ? cssv("--down") : cssv("--flat");
+    document.getElementById("v-dot").style.background = col;
+    const fill = document.getElementById("v-fill");
+    const pct = Math.max(-8, Math.min(8, A.score)) / 8; // -1..1
+    fill.style.background = col;
+    if (pct >= 0) { fill.style.left = "50%"; fill.style.right = (50 - pct * 50) + "%"; }
+    else { fill.style.right = "50%"; fill.style.left = (50 + pct * 50) + "%"; }
+
+    const fl = document.getElementById("factors");
+    fl.innerHTML = "";
+    A.factors.forEach(([name, desc, s]) => {
+      const li = document.createElement("li");
+      const cls = s > 0 ? "pos" : s < 0 ? "neg" : "neu";
+      const sign = s > 0 ? "+" + s : s < 0 ? "" + s : "0";
+      li.innerHTML = `<span class="fsign ${cls}">${sign}</span><span><span class="fname">${name}</span> · <span class="fdesc">${desc}</span></span>`;
+      fl.appendChild(li);
+    });
+
+    // 지표 칩
+    const i = A.closes.length - 1;
+    const rv = A.rsi[i], hist = A.macd.hist[i];
+    const maText = (A.ma5[i] != null && A.ma20[i] != null && A.ma60[i] != null)
+      ? (A.ma5[i] > A.ma20[i] && A.ma20[i] > A.ma60[i] ? "정배열" : (A.ma5[i] < A.ma20[i] && A.ma20[i] < A.ma60[i] ? "역배열" : "혼조"))
+      : "데이터 부족";
+    const bbPos = A.bb.up[i] == null ? "–" : A.price > A.bb.up[i] ? "상단 이탈" : A.price < A.bb.lo[i] ? "하단 이탈" : "밴드 내부";
+    const chips = [
+      { lbl: "RSI (14)", val: rv == null ? "–" : rv.toFixed(1), state: rv == null ? "" : rv >= 70 ? "과매수" : rv <= 30 ? "과매도" : "중립", cls: rv == null ? "st-flat" : rv >= 70 ? "st-up" : rv <= 30 ? "st-down" : "st-flat" },
+      { lbl: "MACD 히스토그램", val: (hist >= 0 ? "+" : "−") + fmt1(Math.abs(hist)), state: hist >= 0 ? "상승 우위" : "하락 우위", cls: hist >= 0 ? "st-up" : "st-down" },
+      { lbl: "이평선 배열", val: maText, state: maText === "정배열" ? "강세" : maText === "역배열" ? "약세" : "관망", cls: maText === "정배열" ? "st-up" : maText === "역배열" ? "st-down" : "st-flat" },
+      { lbl: "볼린저 위치", val: bbPos, state: bbPos === "상단 이탈" ? "과열" : bbPos === "하단 이탈" ? "과대낙폭" : "안정", cls: bbPos === "상단 이탈" ? "st-up" : bbPos === "하단 이탈" ? "st-down" : "st-flat" },
+    ];
+    const cw = document.getElementById("chips");
+    cw.innerHTML = "";
+    chips.forEach(c => {
+      const el = document.createElement("div");
+      el.className = "chip";
+      el.innerHTML = `<span class="clbl">${c.lbl}</span><span class="cval num">${c.val}</span><span class="cstate ${c.cls}">${c.state}</span>`;
+      cw.appendChild(el);
+    });
+
+    buildLegends();
+    drawAll(A);
+  }
+
+  /* ---------- 범례 ---------- */
+  function buildLegends() {
+    const pl = document.getElementById("price-legend");
+    const items = [
+      { key: "px", label: "종가", color: cssv("--ink"), dash: false, fixed: true },
+      { key: "ma5", label: "MA5", color: cssv("--ma5"), dash: false },
+      { key: "ma20", label: "MA20", color: cssv("--ma20"), dash: false },
+      { key: "ma60", label: "MA60", color: cssv("--ma60"), dash: false },
+      { key: "bb", label: "볼린저밴드", color: cssv("--ma20"), dash: true },
+    ];
+    pl.innerHTML = "";
+    items.forEach(it => {
+      const b = document.createElement("button");
+      b.className = "lg"; b.type = "button";
+      b.setAttribute("aria-pressed", it.fixed ? "true" : String(state.series[it.key]));
+      b.innerHTML = `<span class="sw ${it.dash ? "dash" : ""}" style="background:${it.dash ? "" : it.color};color:${it.color}"></span>${it.label}`;
+      if (!it.fixed) b.onclick = () => { state.series[it.key] = !state.series[it.key]; b.setAttribute("aria-pressed", String(state.series[it.key])); drawAll(currentA); };
+      pl.appendChild(b);
+    });
+    const ml = document.getElementById("macd-legend");
+    const mitems = [
+      { key: "line", label: "MACD", color: cssv("--ma20") },
+      { key: "sig", label: "시그널", color: cssv("--ma5") },
+      { key: "hist", label: "히스토그램", color: cssv("--flat"), fixed: true },
+    ];
+    ml.innerHTML = "";
+    mitems.forEach(it => {
+      const b = document.createElement("button");
+      b.className = "lg"; b.type = "button";
+      b.setAttribute("aria-pressed", it.fixed ? "true" : String(state.macdSeries[it.key]));
+      b.innerHTML = `<span class="sw" style="background:${it.color}"></span>${it.label}`;
+      if (!it.fixed) b.onclick = () => { state.macdSeries[it.key] = !state.macdSeries[it.key]; b.setAttribute("aria-pressed", String(state.macdSeries[it.key])); drawAll(currentA); };
+      ml.appendChild(b);
+    });
+  }
+
+  /* ---------- 차트 그리기 ---------- */
+  const NS = "http://www.w3.org/2000/svg";
+  function el(tag, attrs) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
+  function path(pts) { // pts: [[x,y],...] with nulls broken
+    let d = "", pen = false;
+    for (const p of pts) {
+      if (!p || p[1] == null || isNaN(p[1])) { pen = false; continue; }
+      d += (pen ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1) + " ";
+      pen = true;
+    }
+    return d.trim();
+  }
+
+  let currentA = null;
+  const PAD = { l: 4, r: 40, t: 10, b: 18 };
+
+  function xScale(i, n, w) { return PAD.l + (n <= 1 ? 0 : (i / (n - 1)) * (w - PAD.l - PAD.r)); }
+
+  function drawAll(A) {
+    currentA = A;
+    drawPrice(A);
+    drawRsi(A);
+    drawMacd(A);
+    if (hoverIdx != null) applyHover(hoverIdx);
+  }
+
+  function niceTicks(min, max, count) {
+    const span = max - min || 1;
+    const step = Math.pow(10, Math.floor(Math.log10(span / count)));
+    const err = (span / count) / step;
+    const mult = err >= 7.5 ? 10 : err >= 3.5 ? 5 : err >= 1.5 ? 2 : 1;
+    const s = step * mult;
+    const start = Math.ceil(min / s) * s;
+    const t = [];
+    for (let v = start; v <= max + 1e-9; v += s) t.push(v);
+    return t;
+  }
+
+  function drawPrice(A) {
+    const svg = document.getElementById("chart-price");
+    const W = 340, H = 210;
+    svg.innerHTML = "";
+    const n = A.closes.length;
+    const show = state.series;
+    let vals = A.closes.slice();
+    const push = arr => { for (const v of arr) if (v != null) vals.push(v); };
+    if (show.ma5) push(A.ma5);
+    if (show.ma20) push(A.ma20);
+    if (show.ma60) push(A.ma60);
+    if (show.bb) { push(A.bb.up); push(A.bb.lo); }
+    let mn = Math.min(...vals), mx = Math.max(...vals);
+    const pad = (mx - mn) * 0.06 || 1; mn -= pad; mx += pad;
+    const y = v => PAD.t + (1 - (v - mn) / (mx - mn)) * (H - PAD.t - PAD.b);
+    const x = i => xScale(i, n, W);
+
+    // grid + y labels
+    niceTicks(mn, mx, 4).forEach(v => {
+      svg.appendChild(el("line", { class: "gridline", x1: PAD.l, x2: W - PAD.r, y1: y(v), y2: y(v) }));
+      const t = el("text", { class: "axis-txt", x: W - PAD.r + 4, y: y(v) + 3 }); t.textContent = fmt(v);
+      svg.appendChild(t);
+    });
+
+    // Bollinger band fill
+    if (show.bb) {
+      let d = "", started = false;
+      for (let i = 0; i < n; i++) { if (A.bb.up[i] == null) continue; d += (started ? "L" : "M") + x(i).toFixed(1) + " " + y(A.bb.up[i]).toFixed(1) + " "; started = true; }
+      for (let i = n - 1; i >= 0; i--) { if (A.bb.lo[i] == null) continue; d += "L" + x(i).toFixed(1) + " " + y(A.bb.lo[i]).toFixed(1) + " "; }
+      if (d) { d += "Z"; svg.appendChild(el("path", { d, fill: cssv("--band"), stroke: "none" })); }
+      svg.appendChild(el("path", { d: path(A.bb.up.map((v, i) => [x(i), v == null ? null : y(v)])), fill: "none", stroke: cssv("--ma20"), "stroke-width": 1, "stroke-dasharray": "3 3", opacity: .55 }));
+      svg.appendChild(el("path", { d: path(A.bb.lo.map((v, i) => [x(i), v == null ? null : y(v)])), fill: "none", stroke: cssv("--ma20"), "stroke-width": 1, "stroke-dasharray": "3 3", opacity: .55 }));
+    }
+    // close area + line
+    const areaTop = A.closes.map((v, i) => [x(i), y(v)]);
+    let ad = path(areaTop) + ` L ${x(n - 1).toFixed(1)} ${(H - PAD.b).toFixed(1)} L ${x(0).toFixed(1)} ${(H - PAD.b).toFixed(1)} Z`;
+    const grad = el("linearGradient", { id: "pg", x1: 0, y1: 0, x2: 0, y2: 1 });
+    grad.appendChild(el("stop", { offset: "0%", "stop-color": cssv("--ink"), "stop-opacity": .12 }));
+    grad.appendChild(el("stop", { offset: "100%", "stop-color": cssv("--ink"), "stop-opacity": 0 }));
+    const defs = el("defs", {}); defs.appendChild(grad); svg.appendChild(defs);
+    svg.appendChild(el("path", { d: ad, fill: "url(#pg)", stroke: "none" }));
+    // MAs
+    if (show.ma60) svg.appendChild(el("path", { d: path(A.ma60.map((v, i) => [x(i), v == null ? null : y(v)])), fill: "none", stroke: cssv("--ma60"), "stroke-width": 1.6, "stroke-linejoin": "round" }));
+    if (show.ma20) svg.appendChild(el("path", { d: path(A.ma20.map((v, i) => [x(i), v == null ? null : y(v)])), fill: "none", stroke: cssv("--ma20"), "stroke-width": 1.6, "stroke-linejoin": "round" }));
+    if (show.ma5) svg.appendChild(el("path", { d: path(A.ma5.map((v, i) => [x(i), v == null ? null : y(v)])), fill: "none", stroke: cssv("--ma5"), "stroke-width": 1.6, "stroke-linejoin": "round" }));
+    svg.appendChild(el("path", { d: path(areaTop), fill: "none", stroke: cssv("--ink"), "stroke-width": 2, "stroke-linejoin": "round" }));
+    // endpoint marker
+    svg.appendChild(el("circle", { cx: x(n - 1), cy: y(A.closes[n - 1]), r: 3.2, fill: cssv("--ink") }));
+
+    // x축 날짜 라벨 (실시간 데이터에 날짜가 있을 때)
+    if (A.dates && A.dates.length === n) {
+      const idxs = [0, Math.round((n - 1) / 3), Math.round((n - 1) * 2 / 3), n - 1];
+      idxs.forEach((i, k) => {
+        const anchor = k === 0 ? "start" : k === idxs.length - 1 ? "end" : "middle";
+        const t = el("text", { class: "axis-txt", x: Math.max(PAD.l, Math.min(W - PAD.r, x(i))), y: H - 4, "text-anchor": anchor });
+        t.textContent = A.dates[i];
+        svg.appendChild(t);
+      });
+    }
+
+    svg._meta = { x, y, n, W, H };
+    attachHover(svg, "tip-price", A, buildPriceTip);
+  }
+
+  function drawRsi(A) {
+    const svg = document.getElementById("chart-rsi");
+    const W = 340, H = 130; svg.innerHTML = "";
+    const n = A.closes.length;
+    const y = v => PAD.t + (1 - v / 100) * (H - PAD.t - PAD.b);
+    const x = i => xScale(i, n, W);
+    // 30/70 zones
+    svg.appendChild(el("rect", { x: PAD.l, y: y(70), width: W - PAD.l - PAD.r, height: y(30) - y(70), fill: cssv("--surface-2"), opacity: .5 }));
+    [30, 50, 70].forEach(v => {
+      svg.appendChild(el("line", { class: "gridline", x1: PAD.l, x2: W - PAD.r, y1: y(v), y2: y(v), "stroke-dasharray": v === 50 ? "0" : "3 3" }));
+      const t = el("text", { class: "axis-txt", x: W - PAD.r + 4, y: y(v) + 3 }); t.textContent = v; svg.appendChild(t);
+    });
+    svg.appendChild(el("path", { d: path(A.rsi.map((v, i) => [x(i), v == null ? null : y(v)])), fill: "none", stroke: cssv("--ink"), "stroke-width": 1.8, "stroke-linejoin": "round" }));
+    const last = A.rsi[n - 1];
+    if (last != null) svg.appendChild(el("circle", { cx: x(n - 1), cy: y(last), r: 3, fill: last >= 70 ? cssv("--up") : last <= 30 ? cssv("--down") : cssv("--ink") }));
+    svg._meta = { x, y, n, W, H };
+    attachHover(svg, "tip-rsi", A, buildRsiTip);
+  }
+
+  function drawMacd(A) {
+    const svg = document.getElementById("chart-macd");
+    const W = 340, H = 140; svg.innerHTML = "";
+    const n = A.closes.length;
+    const all = [];
+    A.macd.line.forEach(v => { if (v != null) all.push(v); });
+    A.macd.sig.forEach(v => { if (v != null) all.push(v); });
+    A.macd.hist.forEach(v => { if (v != null) all.push(v); });
+    let mx = Math.max(...all.map(Math.abs)) || 1; mx *= 1.12;
+    const y = v => PAD.t + (1 - (v + mx) / (2 * mx)) * (H - PAD.t - PAD.b);
+    const x = i => xScale(i, n, W);
+    svg.appendChild(el("line", { class: "gridline", x1: PAD.l, x2: W - PAD.r, y1: y(0), y2: y(0) }));
+    [mx / 2, -mx / 2].forEach(v => { const t = el("text", { class: "axis-txt", x: W - PAD.r + 4, y: y(v) + 3 }); t.textContent = fmt1(v); svg.appendChild(t); });
+    // histogram bars
+    const bw = Math.max(0.8, (W - PAD.l - PAD.r) / n * 0.6);
+    for (let i = 0; i < n; i++) {
+      const h = A.macd.hist[i]; if (h == null) continue;
+      const yy = y(h), y0 = y(0);
+      svg.appendChild(el("rect", { x: x(i) - bw / 2, y: Math.min(yy, y0), width: bw, height: Math.max(0.6, Math.abs(yy - y0)), rx: 1, fill: h >= 0 ? cssv("--up") : cssv("--down"), opacity: .55 }));
+    }
+    if (state.macdSeries.line) svg.appendChild(el("path", { d: path(A.macd.line.map((v, i) => [x(i), v == null ? null : y(v)])), fill: "none", stroke: cssv("--ma20"), "stroke-width": 1.8 }));
+    if (state.macdSeries.sig) svg.appendChild(el("path", { d: path(A.macd.sig.map((v, i) => [x(i), v == null ? null : y(v)])), fill: "none", stroke: cssv("--ma5"), "stroke-width": 1.6 }));
+    svg._meta = { x, y, n, W, H };
+    attachHover(svg, "tip-macd", A, buildMacdTip);
+  }
+
+  /* ---------- 호버(크로스헤어) ---------- */
+  let overlays = [];
+  function attachHover(svg, tipId, A, tipBuilder) {
+    const meta = svg._meta;
+    const ov = el("rect", { x: 0, y: 0, width: meta.W, height: meta.H, fill: "transparent", style: "cursor:crosshair" });
+    svg.appendChild(ov);
+    const cross = el("line", { x1: 0, x2: 0, y1: PAD.t, y2: meta.H - PAD.b, stroke: cssv("--border-strong"), "stroke-width": 1, "stroke-dasharray": "2 3", opacity: 0 });
+    svg.appendChild(cross);
+    const marker = el("circle", { r: 3.5, fill: "none", stroke: cssv("--ink"), "stroke-width": 1.5, opacity: 0 });
+    svg.appendChild(marker);
+    svg._hov = { cross, marker, meta, tipId, tipBuilder, A };
+    overlays.push(svg);
+
+    const toIdx = ev => {
+      const rect = svg.getBoundingClientRect();
+      const cx = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
+      const px = cx / rect.width * meta.W;
+      const frac = (px - PAD.l) / ((meta.W - PAD.l - PAD.r) || 1);
+      return Math.max(0, Math.min(meta.n - 1, Math.round(frac * (meta.n - 1))));
+    };
+    const move = ev => { hoverIdx = toIdx(ev); applyHover(hoverIdx); if (ev.cancelable && ev.touches) ev.preventDefault(); };
+    const leave = () => { hoverIdx = null; clearHover(); };
+    ov.addEventListener("mousemove", move);
+    ov.addEventListener("mouseleave", leave);
+    ov.addEventListener("touchstart", move, { passive: false });
+    ov.addEventListener("touchmove", move, { passive: false });
+    ov.addEventListener("touchend", leave);
+  }
+
+  function clearHover() {
+    overlays.forEach(svg => {
+      const h = svg._hov; if (!h) return;
+      h.cross.setAttribute("opacity", 0); h.marker.setAttribute("opacity", 0);
+      document.getElementById(h.tipId).style.opacity = 0;
+    });
+  }
+
+  function applyHover(idx) {
+    overlays.forEach(svg => {
+      const h = svg._hov; if (!h || !currentA) return;
+      const meta = h.meta;
+      const xx = meta.x(idx);
+      h.cross.setAttribute("x1", xx); h.cross.setAttribute("x2", xx); h.cross.setAttribute("opacity", .8);
+      const info = h.tipBuilder(currentA, idx, meta);
+      if (info.my != null) { h.marker.setAttribute("cx", xx); h.marker.setAttribute("cy", info.my); h.marker.setAttribute("opacity", 1); }
+      else h.marker.setAttribute("opacity", 0);
+      const tip = document.getElementById(h.tipId);
+      tip.innerHTML = info.html;
+      const rect = svg.getBoundingClientRect();
+      const leftPx = (xx / meta.W) * rect.width;
+      tip.style.left = Math.max(66, Math.min(rect.width - 66, leftPx)) + "px";
+      tip.style.top = "6px";
+      tip.style.opacity = 1;
+    });
+  }
+
+  function dateLabel(A, idx) {
+    if (A.dates && A.dates[idx]) return A.dates[idx] + (idx === A.n - 1 ? " · 최근" : "");
+    const back = A.n - 1 - idx;
+    return back === 0 ? "최근" : back + "일 전";
+  }
+  function trow(color, k, v) {
+    return `<div class="trow"><span class="k">${color ? `<span class="sw" style="background:${color}"></span>` : ""}${k}</span><span class="v">${v}</span></div>`;
+  }
+  function buildPriceTip(A, idx, meta) {
+    let html = `<div class="tdate">${dateLabel(A, idx)}</div>`;
+    html += trow(cssv("--ink"), "종가", fmt(A.closes[idx]) + "원");
+    if (A.ma5[idx] != null) html += trow(cssv("--ma5"), "MA5", fmt(A.ma5[idx]));
+    if (A.ma20[idx] != null) html += trow(cssv("--ma20"), "MA20", fmt(A.ma20[idx]));
+    if (A.ma60[idx] != null) html += trow(cssv("--ma60"), "MA60", fmt(A.ma60[idx]));
+    return { html, my: meta.y(A.closes[idx]) };
+  }
+  function buildRsiTip(A, idx, meta) {
+    const v = A.rsi[idx];
+    let html = `<div class="tdate">${dateLabel(A, idx)}</div>`;
+    html += trow(cssv("--ink"), "RSI", v == null ? "–" : v.toFixed(1));
+    return { html, my: v == null ? null : meta.y(v) };
+  }
+  function buildMacdTip(A, idx, meta) {
+    let html = `<div class="tdate">${dateLabel(A, idx)}</div>`;
+    html += trow(cssv("--ma20"), "MACD", fmt1(A.macd.line[idx]));
+    html += trow(cssv("--ma5"), "시그널", fmt1(A.macd.sig[idx]));
+    html += trow(A.macd.hist[idx] >= 0 ? cssv("--up") : cssv("--down"), "히스토그램", fmt1(A.macd.hist[idx]));
+    return { html, my: meta.y(A.macd.line[idx]) };
+  }
+
+  /* ---------- 이벤트 ---------- */
+  let order = "old";
+  document.querySelectorAll("#order button").forEach(b => {
+    b.onclick = () => {
+      document.querySelectorAll("#order button").forEach(x => x.setAttribute("aria-pressed", "false"));
+      b.setAttribute("aria-pressed", "true"); order = b.dataset.ord;
+    };
+  });
+  document.getElementById("run").onclick = () => {
+    const err = document.getElementById("err");
+    const closes = parseInput(document.getElementById("ta").value, order);
+    if (closes.length < 5) { err.textContent = "숫자를 5개 이상 입력해 주세요. (권장 30개 이상)"; return; }
+    err.textContent = "";
+    const A = analyze(closes, { source: "manual" });
+    hoverIdx = null;
+    render(A);
+    document.getElementById("io").open = false;
+    document.querySelector(".hero").scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  document.getElementById("sample").onclick = () => {
+    const s = sampleData(130);
+    document.getElementById("ta").value = s.join("\n");
+    document.querySelector('#order [data-ord="old"]').click();
+    document.getElementById("err").textContent = "";
+    hoverIdx = null;
+    render(analyze(s, { source: "sample" }));
+  };
+  document.getElementById("refresh").onclick = async () => {
+    const btn = document.getElementById("refresh");
+    btn.disabled = true;
+    const live = await loadLive();
+    btn.disabled = false;
+    if (live) { hoverIdx = null; render(analyze(live.closes, { source: "live", dates: live.dates, updated: live.updated, marketTime: live.marketTime, name: live.name, symbol: live.symbol })); }
+  };
+
+  // 초기 로드: 실시간 데이터(same-origin data.json) 우선, 없으면 예시 데이터로 폴백
+  (async function init() {
+    const live = await loadLive();
+    if (live) render(analyze(live.closes, { source: "live", dates: live.dates, updated: live.updated, marketTime: live.marketTime, name: live.name, symbol: live.symbol }));
+    else render(analyze(sampleData(130), { source: "sample" }));
+    // 테마 토글 시 색상 재적용
+    const mo = new MutationObserver(() => { if (currentA) render(currentA); });
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  })();
+})();
+</script>
