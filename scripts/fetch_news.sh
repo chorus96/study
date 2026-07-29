@@ -94,9 +94,15 @@ system = (
   "1부터 시작하는 index와 개별 심리입니다.")
 user = (f"다음은 최신 {name} 관련 뉴스 헤드라인입니다:\n\n{titles}\n\n"
         "이를 분석해 주어진 스키마에 맞는 JSON으로만 답하세요.")
+# effort는 일부 모델(예: Haiku 4.5, Sonnet 4.5)에서 400을 유발하므로 지원 모델에만 추가.
+output_config = {"format": {"type": "json_schema", "schema": schema}}
+if any(model.startswith(p) for p in (
+        "claude-opus-5", "claude-opus-4", "claude-fable-5",
+        "claude-mythos-5", "claude-sonnet-5")):
+    output_config["effort"] = "low"
 body = {
   "model": model, "max_tokens": 3000,
-  "output_config": {"format": {"type": "json_schema", "schema": schema}, "effort": "low"},
+  "output_config": output_config,
   "system": system,
   "messages": [{"role": "user", "content": user}],
 }
