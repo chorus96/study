@@ -47,7 +47,10 @@ for line in open(src, encoding="utf-8"):
     if j.get("status") != "000":
         continue
     for it in j.get("list", []):
-        if (it.get("account_nm") or "").strip() != "영업이익":
+        nm = (it.get("account_nm") or "").replace(" ", "")
+        # 흑자·적자에 따라 "영업이익" 또는 "영업이익(손실)"로 표기되므로 부분일치.
+        # 매출총이익/영업외이익 등 오탐 방지를 위해 정확히 그 두 형태만 허용.
+        if nm not in ("영업이익", "영업이익(손실)", "영업손실"):
             continue
         if (it.get("sj_div") or "") not in ("IS", "CIS"):
             continue
@@ -75,10 +78,17 @@ else
   if [ -z "${FMP_API_KEY:-}" ]; then echo "FMP_API_KEY 미설정 → 영업이익 건너뜀(${NAME})" >&2; exit 0; fi
   [ -z "$SYMBOL" ] && SYMBOL="$NAME"
   echo "영업이익(FMP) 수집 시작: ${NAME} (${SYMBOL})"
-  if ! curl -sfL --max-time 30 -A "$UA" \
-      "https://financialmodelingprep.com/api/v3/income-statement/${SYMBOL}?period=annual&limit=6&apikey=${FMP_API_KEY}" -o "$tmp" 2>/dev/null; then
-    echo "  · FMP 요청 실패" >&2; exit 0
+  # FMP 무료 플랜은 현재 stable 엔드포인트를 사용(레거시 /api/v3 는 유료 전환됨).
+  # stable 실패 시 v3 로 폴백하고, 진단을 위해 HTTP 코드·본문 앞부분을 로그로 남긴다.
+  code=$(curl -sS --max-time 30 -A "$UA" -w '%{http_code}' -o "$tmp" \
+    "https://financialmodelingprep.com/stable/income-statement?symbol=${SYMBOL}&period=annual&limit=6&apikey=${FMP_API_KEY}" 2>/dev/null || echo 000)
+  echo "  · FMP(stable) HTTP ${code}: $(head -c 160 "$tmp" 2>/dev/null | tr '\n' ' ')" >&2
+  if [ "$code" != "200" ]; then
+    code=$(curl -sS --max-time 30 -A "$UA" -w '%{http_code}' -o "$tmp" \
+      "https://financialmodelingprep.com/api/v3/income-statement/${SYMBOL}?period=annual&limit=6&apikey=${FMP_API_KEY}" 2>/dev/null || echo 000)
+    echo "  · FMP(v3) HTTP ${code}: $(head -c 160 "$tmp" 2>/dev/null | tr '\n' ' ')" >&2
   fi
+  if [ "$code" != "200" ]; then echo "  · FMP 요청 실패(HTTP ${code})" >&2; exit 0; fi
   python3 - "$OUT" "$NAME" "$UPDATED" "$CURRENCY" "$tmp" <<'PY' || { echo "  · FMP 영업이익 파싱 실패" >&2; exit 0; }
 import sys, json
 out, name, updated, currency, src = sys.argv[1:6]
@@ -90,7 +100,7 @@ if not isinstance(arr, list) or not arr:
     sys.exit("FMP 데이터 없음")
 by_year = {}
 for it in arr:
-    yr = str(it.get("calendarYear") or "")
+    yr = str(it.get("calendarYear") or it.get("fiscalYear") or (it.get("date") or "")[:4] or "")
     v = it.get("operatingIncome")
     if yr and isinstance(v, (int, float)):
         by_year[yr] = int(v)
