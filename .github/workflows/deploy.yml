@@ -47,6 +47,8 @@ jobs:
             stock-analyzer/nvidia/data.json
             stock-analyzer/micron/financials.json
             stock-analyzer/nvidia/financials.json
+            stock-analyzer/micron/fundamentals.json
+            stock-analyzer/nvidia/fundamentals.json
           key: us-price-${{ github.run_id }}
           restore-keys: |
             us-price-
@@ -164,6 +166,30 @@ jobs:
           OUT: 'stock-analyzer/samsung/fundamentals.json'
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
 
+      - name: Fetch Micron fundamentals (PER via EPS)
+        continue-on-error: true
+        run: bash scripts/fetch_fundamentals.sh
+        env:
+          NAME: '마이크론'
+          SYMBOL: 'MU'
+          MARKET: 'us'
+          CURRENCY: 'USD'
+          OUT: 'stock-analyzer/micron/fundamentals.json'
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+
+      - name: Fetch NVIDIA fundamentals (PER via EPS)
+        continue-on-error: true
+        run: bash scripts/fetch_fundamentals.sh
+        env:
+          NAME: '엔비디아'
+          SYMBOL: 'NVDA'
+          MARKET: 'us'
+          CURRENCY: 'USD'
+          OUT: 'stock-analyzer/nvidia/fundamentals.json'
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+
       # ── 영업이익(연간): 국내는 DART, 미국은 FMP 무료 키로 수집 ──
       - name: Fetch SK Hynix operating income (DART)
         continue-on-error: true
@@ -221,6 +247,8 @@ jobs:
             stock-analyzer/nvidia/data.json
             stock-analyzer/micron/financials.json
             stock-analyzer/nvidia/financials.json
+            stock-analyzer/micron/fundamentals.json
+            stock-analyzer/nvidia/fundamentals.json
           key: us-price-${{ github.run_id }}
 
       - name: Configure Pages
