@@ -49,10 +49,9 @@ jobs:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
 
       - name: Configure Pages
+        # 최초 1회만 Settings → Pages → Source를 "GitHub Actions"로 설정해야 함
+        # (워크플로 토큰은 Pages를 자동 생성할 권한이 없음).
         uses: actions/configure-pages@v5
-        with:
-          # Pages를 워크플로에서 자동 활성화(수동 Settings 단계 불필요).
-          enablement: true
 
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@v3
