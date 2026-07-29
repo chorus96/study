@@ -38,11 +38,16 @@ jobs:
         run: bash scripts/fetch_stock.sh
         env:
           SYMBOL: '000660.KS'
+          NUMCODE: '000660'
           NAME: 'SK하이닉스'
           RANGE: '6mo'
           OUT: 'hynix-stock-analyzer/data.json'
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
 
       - name: Configure Pages
+        # 최초 1회만 Settings → Pages → Source를 "GitHub Actions"로 설정해야 함
+        # (워크플로 토큰은 Pages를 자동 생성할 권한이 없음).
         uses: actions/configure-pages@v5
 
       - name: Upload site artifact
