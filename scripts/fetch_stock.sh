@@ -68,6 +68,45 @@ if [ "$MARKET" != "krx" ]; then
   done
 fi
 
+# ---------- 1.5) Naver Finance (국내, 키 불필요, 실제 시세) ----------
+# pykrx가 러너에서 실제와 다른 값을 주는 사례가 있어, 국내는 네이버 일봉을 먼저 쓴다.
+if [ "$ok" -ne 1 ] && [ "$MARKET" = "krx" ]; then
+  ns="$(python3 -c 'import datetime;print((datetime.datetime.now()-datetime.timedelta(days=400)).strftime("%Y%m%d"))')"
+  ne="$(python3 -c 'import datetime;print(datetime.datetime.now().strftime("%Y%m%d"))')"
+  code=$(fetch "Naver(${NUMCODE})" "https://api.finance.naver.com/siseJson.naver?symbol=${NUMCODE}&requestType=1&startTime=${ns}&endTime=${ne}&timeframe=day")
+  if [ "$code" = "200" ]; then
+    if python3 - "$tmp" "$OUT" "$NAME" "$UPDATED" "$SYMLABEL" "$CURRENCY" <<'PY'
+import sys, ast, json, datetime
+src, out, name, updated, symbol, currency = sys.argv[1:7]
+raw = open(src, encoding="utf-8").read().strip()
+try:
+    rows = ast.literal_eval(raw)          # 네이버 응답은 파이썬 리터럴(작은따옴표)
+except Exception as ex:
+    sys.exit("Naver 파싱 실패: %s" % ex)
+pts = []
+for r in rows[1:]:                        # rows[0]은 헤더
+    try:
+        d = str(r[0]); c = float(r[4])    # [날짜,시가,고가,저가,종가,거래량,...]
+    except (IndexError, ValueError, TypeError):
+        continue
+    if len(d) != 8:
+        continue
+    t = int(datetime.datetime.strptime(d, "%Y%m%d")
+            .replace(tzinfo=datetime.timezone.utc).timestamp())
+    if c > 0:
+        pts.append({"t": t, "c": c})
+pts = pts[-260:]
+if len(pts) < 5:
+    sys.exit("Naver 데이터 부족")
+json.dump({"symbol": symbol, "name": name, "currency": currency,
+           "price": pts[-1]["c"], "marketTime": pts[-1]["t"], "updated": updated, "points": pts},
+          open(out, "w", encoding="utf-8"), ensure_ascii=False)
+print("  Naver rows:", len(pts), "· 현재가:", pts[-1]["c"])
+PY
+    then ok=1; echo "→ 성공: Naver Finance"; fi
+  fi
+fi
+
 # ---------- 2) Stooq CSV (국내 .kr / 미국 .us, 무키) ----------
 if [ "$ok" -ne 1 ]; then
   code=$(fetch "Stooq(${STOOQ_S})" "https://stooq.com/q/d/l/?s=${STOOQ_S}&i=d")
