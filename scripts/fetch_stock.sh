@@ -42,8 +42,14 @@ echo "데이터 수집 시작 (symbol=${SYMBOL}, code=${NUMCODE})"
 # Yahoo는 GitHub Actions(Azure) IP에 429(rate-limit)를 자주 주지만 간헐적으로 통과한다.
 # 미국 종목은 무키로 쓸 다른 소스가 없어, 통과할 때까지 여러 번 재시도한다.
 # 국내(KRX) 종목은 pykrx가 안정적이므로 Yahoo를 건너뛰어 US용 rate 여유를 남긴다.
+# 단, TwelveData/FMP 무료 키가 있으면 그쪽이 안정적이므로 Yahoo 재시도를 줄여
+# 빠르게 키 소스로 넘어간다(빌드 단축·Yahoo 부하 감소).
 if [ "$MARKET" != "krx" ]; then
-  attempts="${YAHOO_ATTEMPTS:-6}"
+  if [ -n "${TWELVEDATA_API_KEY:-}" ] || [ -n "${FMP_API_KEY:-}" ]; then
+    attempts="${YAHOO_ATTEMPTS:-1}"
+  else
+    attempts="${YAHOO_ATTEMPTS:-6}"
+  fi
   for try in $(seq 1 "$attempts"); do
     [ "$ok" -eq 1 ] && break
     for host in query1.finance.yahoo.com query2.finance.yahoo.com; do
