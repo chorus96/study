@@ -354,6 +354,9 @@
     <div class="chart-box"><div id="tip-macd" class="tip"></div><svg id="chart-macd" viewBox="0 0 340 140" preserveAspectRatio="none" role="img" aria-label="MACD 차트"></svg></div>
   </section>
 
+  <!-- PER CHART (재무지표) -->
+  <section class="card chart-card" id="per-card" hidden></section>
+
 </div>
 
 <script>
@@ -564,6 +567,76 @@
        ${items ? `<p class="hl-title">주요 헤드라인</p><ul class="hls">${items}</ul>` : ""}
        <p class="news-disc">최신 뉴스 헤드라인의 <b>키워드를 규칙 기반으로 집계</b>한 간이 심리이며(AI 분석 아님), 오판이 있을 수 있습니다. 투자 자문·매매 권유가 아니니 원문 링크로 사실관계를 직접 확인하세요.</p>`;
     card.hidden = false;
+  }
+
+  /* ---------- 재무지표(PER 추이) 로드 & 렌더 ---------- */
+  let curFund = null;
+  async function loadFundamentals(dir) {
+    try {
+      const res = await fetch(`./${dir}/fundamentals.json`, { cache: "no-store" });
+      if (!res.ok) return null;
+      const j = await res.json();
+      if (!j.per || !j.per.points || !j.per.points.length) return null;
+      return j;
+    } catch (e) { return null; }
+  }
+
+  function renderFundamentals(f) {
+    curFund = f;
+    const card = document.getElementById("per-card");
+    if (!f || !f.per || !f.per.points || !f.per.points.length) {
+      // 미국 종목은 무료 PER 시계열이 없어 안내만 표시, 그 외엔 카드 숨김
+      if (curCurrency === "USD") {
+        card.innerHTML =
+          `<div class="chart-head"><h3>PER (주가수익비율)</h3></div>
+           <p class="news-disc" style="border-top:none;margin-top:0;padding-top:0">
+             미국 종목은 무료로 받을 수 있는 과거 PER 시계열이 없어 표시하지 않습니다. (국내 종목만 제공)</p>`;
+        card.hidden = false;
+      } else {
+        card.hidden = true;
+      }
+      return;
+    }
+    const upd = fmtUpdated(f.updated, null);
+    card.innerHTML =
+      `<div class="chart-head">
+         <h3>PER (주가수익비율)</h3>
+         <span class="seg-lbl">현재 ${esc(String(f.per.current))}배${upd ? " · " + upd : ""}</span>
+       </div>
+       <div class="chart-box"><svg id="chart-per" viewBox="0 0 340 140" preserveAspectRatio="none" role="img" aria-label="PER 추이 차트"></svg></div>`;
+    card.hidden = false;
+    drawPer(f);
+  }
+
+  function drawPer(f) {
+    const svg = document.getElementById("chart-per");
+    if (!svg) return;
+    const W = 340, H = 140; svg.innerHTML = "";
+    const pts = f.per.points, n = pts.length;
+    const vals = pts.map(p => p.v);
+    let mn = Math.min(...vals), mx = Math.max(...vals);
+    const pad = (mx - mn) * 0.08 || 1; mn = Math.max(0, mn - pad); mx += pad;
+    const x = i => xScale(i, n, W);
+    const y = v => PAD.t + (1 - (v - mn) / (mx - mn)) * (H - PAD.t - PAD.b);
+    niceTicks(mn, mx, 4).forEach(v => {
+      svg.appendChild(el("line", { class: "gridline", x1: PAD.l, x2: W - PAD.r, y1: y(v), y2: y(v) }));
+      const t = el("text", { class: "axis-txt", x: W - PAD.r + 4, y: y(v) + 3 });
+      t.textContent = (Math.round(v * 10) / 10);
+      svg.appendChild(t);
+    });
+    svg.appendChild(el("path", { d: path(pts.map((p, i) => [x(i), y(p.v)])), fill: "none",
+      stroke: cssv("--ma20"), "stroke-width": 1.8, "stroke-linejoin": "round" }));
+    const last = pts[n - 1];
+    svg.appendChild(el("circle", { cx: x(n - 1), cy: y(last.v), r: 3, fill: cssv("--ma20") }));
+    // x축 날짜 라벨
+    const dates = pts.map(p => new Date(p.t * 1000).toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit", timeZone: "Asia/Seoul" }));
+    const idxs = [0, Math.round((n - 1) / 2), n - 1];
+    idxs.forEach((i, k) => {
+      const anchor = k === 0 ? "start" : k === idxs.length - 1 ? "end" : "middle";
+      const t = el("text", { class: "axis-txt", x: Math.max(PAD.l, Math.min(W - PAD.r, x(i))), y: H - 4, "text-anchor": anchor });
+      t.textContent = dates[i];
+      svg.appendChild(t);
+    });
   }
 
   /* ---------- 메인 계산 & 렌더 ---------- */
@@ -974,10 +1047,11 @@
     document.getElementById("tk-code").textContent = (cfg.exch || "KRX") + " " + cfg.code;
     document.title = cfg.name + " 기술적 분석";
     hoverIdx = null;
-    const [live, news] = await Promise.all([loadLive(cfg.dir), loadNews(cfg.dir)]);
+    const [live, news, fund] = await Promise.all([loadLive(cfg.dir), loadNews(cfg.dir), loadFundamentals(cfg.dir)]);
     if (live) render(analyze(live.closes, { source: "live", dates: live.dates, updated: live.updated, marketTime: live.marketTime, name: live.name || cfg.name, symbol: live.symbol || cfg.symbol }));
     else render(analyze(sampleData(260, cfg.sample), { source: "sample", name: cfg.name, symbol: cfg.symbol }));
     renderNews(news);
+    renderFundamentals(fund);
   }
 
   /* ---------- 이벤트 ---------- */
@@ -995,7 +1069,7 @@
   (async function init() {
     await selectStock(curStock);
     // 테마 토글 시 색상 재적용
-    const mo = new MutationObserver(() => { if (currentA) render(currentA); });
+    const mo = new MutationObserver(() => { if (currentA) render(currentA); if (curFund) drawPer(curFund); });
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   })();
 })();

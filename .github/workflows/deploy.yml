@@ -137,6 +137,27 @@ jobs:
           NEWS_QUERY: '엔비디아'
           NEWS_OUT: 'stock-analyzer/nvidia/news.json'
 
+      # ── 재무지표(PER 일별 추이): 국내 종목만 pykrx로 수집 (무키). ──
+      - name: Fetch SK Hynix fundamentals (PER)
+        continue-on-error: true
+        run: bash scripts/fetch_fundamentals.sh
+        env:
+          NUMCODE: '000660'
+          NAME: 'SK하이닉스'
+          MARKET: 'krx'
+          CURRENCY: 'KRW'
+          OUT: 'stock-analyzer/hynix/fundamentals.json'
+
+      - name: Fetch Samsung fundamentals (PER)
+        continue-on-error: true
+        run: bash scripts/fetch_fundamentals.sh
+        env:
+          NUMCODE: '005930'
+          NAME: '삼성전자'
+          MARKET: 'krx'
+          CURRENCY: 'KRW'
+          OUT: 'stock-analyzer/samsung/fundamentals.json'
+
       # 이번 실행의 미국 시세(신규 성공분 또는 복원분)를 캐시에 저장 → 다음 실행에서 복원.
       - name: Save US price data to cache
         if: always()
