@@ -35,6 +35,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 미국 종목(Yahoo 간헐적 429)의 마지막 성공 시세를 캐시에서 복원.
+      # 이번 수집이 실패해도 직전 실데이터가 남아 예시 폴백 대신 표시된다.
+      - name: Restore cached US price data
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            stock-analyzer/micron/data.json
+            stock-analyzer/nvidia/data.json
+          key: us-price-${{ github.run_id }}
+          restore-keys: |
+            us-price-
+
       # ── 시세: 종목별로 수집 (한 종목이 실패해도 배포는 진행) ──
       - name: Fetch SK Hynix price data
         continue-on-error: true
@@ -124,6 +136,16 @@ jobs:
           NAME: '엔비디아'
           NEWS_QUERY: '엔비디아'
           NEWS_OUT: 'stock-analyzer/nvidia/news.json'
+
+      # 이번 실행의 미국 시세(신규 성공분 또는 복원분)를 캐시에 저장 → 다음 실행에서 복원.
+      - name: Save US price data to cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            stock-analyzer/micron/data.json
+            stock-analyzer/nvidia/data.json
+          key: us-price-${{ github.run_id }}
 
       - name: Configure Pages
         # 최초 1회만 Settings → Pages → Source를 "GitHub Actions"로 설정해야 함
