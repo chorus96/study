@@ -74,36 +74,42 @@ print("영업이익(DART) 완료:", len(pts), "개년 · 최근", pts[-1]["perio
 PY
 
 else
-  # ---------- FMP: 연간 영업이익 ----------
-  if [ -z "${FMP_API_KEY:-}" ]; then echo "FMP_API_KEY 미설정 → 영업이익 건너뜀(${NAME})" >&2; exit 0; fi
+  # ---------- 미국: FMP → Alpha Vantage(폴백) ----------
+  # FMP 무료 플랜은 일부 종목만 허용(예: NVDA 가능, MU 불가). FMP가 안 되는
+  # 종목은 Alpha Vantage(무료 25회/일)로 income statement를 받는다.
   [ -z "$SYMBOL" ] && SYMBOL="$NAME"
-  echo "영업이익(FMP) 수집 시작: ${NAME} (${SYMBOL})"
-  # FMP 무료 플랜은 현재 stable 엔드포인트를 사용(레거시 /api/v3 는 유료 전환됨).
-  # stable 실패 시 v3 로 폴백하고, 진단을 위해 HTTP 코드·본문 앞부분을 로그로 남긴다.
-  code=$(curl -sS --max-time 30 -A "$UA" -w '%{http_code}' -o "$tmp" \
-    "https://financialmodelingprep.com/stable/income-statement?symbol=${SYMBOL}&period=annual&limit=5&apikey=${FMP_API_KEY}" 2>/dev/null || echo 000)
-  echo "  · FMP(stable) HTTP ${code}: $(head -c 160 "$tmp" 2>/dev/null | tr '\n' ' ')" >&2
-  if [ "$code" != "200" ]; then
-    code=$(curl -sS --max-time 30 -A "$UA" -w '%{http_code}' -o "$tmp" \
-      "https://financialmodelingprep.com/api/v3/income-statement/${SYMBOL}?period=annual&limit=5&apikey=${FMP_API_KEY}" 2>/dev/null || echo 000)
-    echo "  · FMP(v3) HTTP ${code}: $(head -c 160 "$tmp" 2>/dev/null | tr '\n' ' ')" >&2
-  fi
-  if [ "$code" != "200" ]; then echo "  · FMP 요청 실패(HTTP ${code})" >&2; exit 0; fi
-  python3 - "$OUT" "$NAME" "$UPDATED" "$CURRENCY" "$tmp" <<'PY' || { echo "  · FMP 영업이익 파싱 실패" >&2; exit 0; }
+  ok=0
+
+  # 공용 파서: FMP(배열) / Alpha Vantage(annualReports) 응답을 영업이익으로 변환.
+  PARSE="$(mktemp)"; trap 'rm -f "$tmp" "$PARSE"' EXIT
+  cat > "$PARSE" <<'PY'
 import sys, json
-out, name, updated, currency, src = sys.argv[1:6]
+out, name, updated, currency, src, kind = sys.argv[1:7]
 try:
-    arr = json.load(open(src, encoding="utf-8"))
+    raw = json.load(open(src, encoding="utf-8"))
 except Exception:
-    sys.exit("FMP JSON 파싱 실패")
-if not isinstance(arr, list) or not arr:
-    sys.exit("FMP 데이터 없음")
+    sys.exit("JSON 파싱 실패")
 by_year = {}
-for it in arr:
-    yr = str(it.get("calendarYear") or it.get("fiscalYear") or (it.get("date") or "")[:4] or "")
-    v = it.get("operatingIncome")
-    if yr and isinstance(v, (int, float)):
-        by_year[yr] = int(v)
+if kind == "fmp":
+    if not isinstance(raw, list) or not raw:
+        sys.exit("FMP 데이터 없음")
+    for it in raw:
+        yr = str(it.get("calendarYear") or it.get("fiscalYear") or (it.get("date") or "")[:4] or "")
+        v = it.get("operatingIncome")
+        if yr and isinstance(v, (int, float)):
+            by_year[yr] = int(v)
+else:  # Alpha Vantage
+    reports = raw.get("annualReports") if isinstance(raw, dict) else None
+    if not reports:
+        sys.exit("AV 데이터 없음: " + json.dumps(raw, ensure_ascii=False)[:140])
+    for it in reports:
+        yr = (it.get("fiscalDateEnding") or "")[:4]
+        try:
+            v = int(it.get("operatingIncome"))
+        except (TypeError, ValueError):
+            v = None
+        if yr and v is not None:
+            by_year[yr] = v
 pts = [{"period": y, "value": by_year[y]} for y in sorted(by_year)]
 if len(pts) < 2:
     sys.exit("영업이익 데이터 부족")
@@ -111,6 +117,29 @@ data = {"name": name, "currency": currency, "updated": updated,
         "operatingIncome": {"unit": currency, "points": pts[-6:]}}
 with open(out, "w", encoding="utf-8") as f:
     json.dump(data, f, ensure_ascii=False)
-print("영업이익(FMP) 완료:", len(pts), "개년 · 최근", pts[-1]["period"], pts[-1]["value"])
+print("영업이익 완료:", len(pts), "개년 · 최근", pts[-1]["period"], pts[-1]["value"])
 PY
+
+  if [ -n "${FMP_API_KEY:-}" ]; then
+    echo "영업이익(FMP) 시도: ${NAME} (${SYMBOL})"
+    code=$(curl -sS --max-time 30 -A "$UA" -w '%{http_code}' -o "$tmp" \
+      "https://financialmodelingprep.com/stable/income-statement?symbol=${SYMBOL}&period=annual&limit=5&apikey=${FMP_API_KEY}" 2>/dev/null || echo 000)
+    echo "  · FMP(stable) HTTP ${code}: $(head -c 140 "$tmp" 2>/dev/null | tr '\n' ' ')" >&2
+    if [ "$code" = "200" ] && python3 "$PARSE" "$OUT" "$NAME" "$UPDATED" "$CURRENCY" "$tmp" fmp; then
+      ok=1; echo "→ 성공: FMP (${NAME})"
+    fi
+  fi
+
+  if [ "$ok" -ne 1 ] && [ -n "${ALPHAVANTAGE_API_KEY:-}" ]; then
+    echo "영업이익(Alpha Vantage) 시도: ${NAME} (${SYMBOL})"
+    code=$(curl -sS --max-time 30 -A "$UA" -w '%{http_code}' -o "$tmp" \
+      "https://www.alphavantage.co/query?function=INCOME_STATEMENT&symbol=${SYMBOL}&apikey=${ALPHAVANTAGE_API_KEY}" 2>/dev/null || echo 000)
+    echo "  · AV HTTP ${code}: $(head -c 140 "$tmp" 2>/dev/null | tr '\n' ' ')" >&2
+    if [ "$code" = "200" ] && python3 "$PARSE" "$OUT" "$NAME" "$UPDATED" "$CURRENCY" "$tmp" av; then
+      ok=1; echo "→ 성공: Alpha Vantage (${NAME})"
+    fi
+  fi
+
+  [ "$ok" -ne 1 ] && echo "  · 미국 영업이익 수집 실패(${NAME})" >&2
+  exit 0
 fi
