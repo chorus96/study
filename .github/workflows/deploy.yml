@@ -50,6 +50,9 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          # Pages를 워크플로에서 자동 활성화(수동 Settings 단계 불필요).
+          enablement: true
 
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@v3

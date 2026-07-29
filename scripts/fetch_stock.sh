@@ -23,7 +23,8 @@ fetch() { # $1=label $2=url [$3..=extra curl args]
   code=$(curl -sS -m 30 -A "$UA" -H "Accept: application/json, text/csv, */*" \
               -w '%{http_code}' -o "$tmp" "$@" "$url" 2>/tmp/curl_err || true)
   [ -z "$code" ] && code="000"
-  echo "  · ${label}: HTTP ${code}, $(wc -c <"$tmp" 2>/dev/null || echo 0) bytes $( [ -s /tmp/curl_err ] && echo "($(tr '\n' ' ' </tmp/curl_err | cut -c1-80))" )"
+  # 진단은 stderr로(=로그에만), 반환값(HTTP코드)만 stdout으로.
+  echo "  · ${label}: HTTP ${code}, $(wc -c <"$tmp" 2>/dev/null || echo 0) bytes $( [ -s /tmp/curl_err ] && echo "($(tr '\n' ' ' </tmp/curl_err | cut -c1-100))" )" >&2
   printf '%s' "$code"
 }
 
@@ -73,7 +74,44 @@ PY
   fi
 fi
 
-# ---------- 3) Twelve Data (무료 API 키, 클라우드 IP 허용) ----------
+# ---------- 3) pykrx (KRX 공식 데이터, API 키 불필요) ----------
+if [ "$ok" -ne 1 ]; then
+  echo "  · pykrx: 설치 및 조회 시도..." >&2
+  if python3 -m pip install --quiet --disable-pip-version-check pykrx >/tmp/pip.log 2>&1; then
+    if python3 - "$OUT" "$NAME" "$UPDATED" "$NUMCODE" <<'PY'
+import sys, json, datetime
+out, name, updated, numcode = sys.argv[1:5]
+try:
+    from pykrx import stock
+except Exception as e:
+    sys.exit("pykrx import 실패: %s" % e)
+end = datetime.datetime.now()
+start = end - datetime.timedelta(days=280)
+df = stock.get_market_ohlcv(start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), numcode)
+if df is None or df.empty:
+    sys.exit("pykrx: 빈 데이터")
+points = []
+for idx, row in df.iterrows():
+    d = idx.to_pydatetime().replace(tzinfo=datetime.timezone.utc)
+    c = float(row["종가"])
+    if c > 0:
+        points.append({"t": int(d.timestamp()), "c": c})
+points = points[-140:]
+if len(points) < 5:
+    sys.exit("pykrx: 데이터 부족")
+json.dump({"symbol": numcode + ".KS", "name": name, "currency": "KRW",
+           "price": points[-1]["c"], "marketTime": points[-1]["t"],
+           "updated": updated, "points": points},
+          open(out, "w", encoding="utf-8"), ensure_ascii=False)
+print("  pykrx rows:", len(points))
+PY
+    then ok=1; echo "→ 성공: pykrx (KRX)"; else echo "  · pykrx 조회 실패" >&2; fi
+  else
+    echo "  · pykrx 설치 실패: $(tail -1 /tmp/pip.log 2>/dev/null)" >&2
+  fi
+fi
+
+# ---------- 4) Twelve Data (무료 API 키, 클라우드 IP 허용) ----------
 # GitHub Secret TWELVEDATA_API_KEY 가 설정된 경우에만 시도.
 if [ "$ok" -ne 1 ] && [ -n "${TWELVEDATA_API_KEY:-}" ]; then
   code=$(fetch "TwelveData" "https://api.twelvedata.com/time_series?symbol=${NUMCODE}&exchange=KRX&interval=1day&outputsize=140&order=ASC&apikey=${TWELVEDATA_API_KEY}")
@@ -88,7 +126,7 @@ if [ "$ok" -ne 1 ] && [ -n "${TWELVEDATA_API_KEY:-}" ]; then
   fi
 fi
 
-# ---------- 4) Financial Modeling Prep (무료 API 키) ----------
+# ---------- 5) Financial Modeling Prep (무료 API 키) ----------
 if [ "$ok" -ne 1 ] && [ -n "${FMP_API_KEY:-}" ]; then
   code=$(fetch "FMP" "https://financialmodelingprep.com/api/v3/historical-price-full/${SYMBOL}?serietype=line&apikey=${FMP_API_KEY}")
   if [ "$code" = "200" ] && jq -e '.historical and (.historical|length>0)' "$tmp" >/dev/null 2>&1; then
