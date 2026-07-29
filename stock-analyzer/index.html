@@ -588,16 +588,7 @@
     curFund = f;
     const card = document.getElementById("per-card");
     if (!f || !f.per || !f.per.points || !f.per.points.length) {
-      // 미국 종목은 무료 PER 시계열이 없어 안내만 표시, 그 외엔 카드 숨김
-      if (curCurrency === "USD") {
-        card.innerHTML =
-          `<div class="chart-head"><h3>PER (주가수익비율)</h3></div>
-           <p class="news-disc" style="border-top:none;margin-top:0;padding-top:0">
-             미국 종목은 무료로 받을 수 있는 과거 PER 시계열이 없어 표시하지 않습니다. (국내 종목만 제공)</p>`;
-        card.hidden = false;
-      } else {
-        card.hidden = true;
-      }
+      card.hidden = true;   // PER 데이터가 없으면 카드 숨김
       return;
     }
     const upd = fmtUpdated(f.updated, null);
