@@ -11,6 +11,8 @@ on:
       - 'stock-analyzer/**'
       - 'scripts/fetch_stock.sh'
       - 'scripts/fetch_news.sh'
+      - 'scripts/fetch_fundamentals.sh'
+      - 'scripts/fetch_financials.sh'
       - '.github/workflows/deploy.yml'
   schedule:
     # KRX 정규장 09:00–15:30 KST = 00:00–06:30 UTC(평일). 30분 간격으로 갱신.
@@ -157,6 +159,51 @@ jobs:
           MARKET: 'krx'
           CURRENCY: 'KRW'
           OUT: 'stock-analyzer/samsung/fundamentals.json'
+
+      # ── 영업이익(연간): 국내는 DART, 미국은 FMP 무료 키로 수집 ──
+      - name: Fetch SK Hynix operating income (DART)
+        continue-on-error: true
+        run: bash scripts/fetch_financials.sh
+        env:
+          NAME: 'SK하이닉스'
+          MARKET: 'krx'
+          CURRENCY: 'KRW'
+          CORP_CODE: '00164779'
+          OUT: 'stock-analyzer/hynix/financials.json'
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+
+      - name: Fetch Samsung operating income (DART)
+        continue-on-error: true
+        run: bash scripts/fetch_financials.sh
+        env:
+          NAME: '삼성전자'
+          MARKET: 'krx'
+          CURRENCY: 'KRW'
+          CORP_CODE: '00126380'
+          OUT: 'stock-analyzer/samsung/financials.json'
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+
+      - name: Fetch Micron operating income (FMP)
+        continue-on-error: true
+        run: bash scripts/fetch_financials.sh
+        env:
+          NAME: '마이크론'
+          SYMBOL: 'MU'
+          MARKET: 'us'
+          CURRENCY: 'USD'
+          OUT: 'stock-analyzer/micron/financials.json'
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+
+      - name: Fetch NVIDIA operating income (FMP)
+        continue-on-error: true
+        run: bash scripts/fetch_financials.sh
+        env:
+          NAME: '엔비디아'
+          SYMBOL: 'NVDA'
+          MARKET: 'us'
+          CURRENCY: 'USD'
+          OUT: 'stock-analyzer/nvidia/financials.json'
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
 
       # 이번 실행의 미국 시세(신규 성공분 또는 복원분)를 캐시에 저장 → 다음 실행에서 복원.
       - name: Save US price data to cache

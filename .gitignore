@@ -3,3 +3,4 @@
 stock-analyzer/*/data.json
 stock-analyzer/*/news.json
 stock-analyzer/*/fundamentals.json
+stock-analyzer/*/financials.json
