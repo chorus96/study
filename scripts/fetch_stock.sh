@@ -7,7 +7,7 @@ set -uo pipefail
 SYMBOL="${SYMBOL:-000660.KS}"          # Yahoo 형식
 NUMCODE="${NUMCODE:-000660}"           # 숫자 코드
 NAME="${NAME:-SK하이닉스}"
-OUT="${OUT:-hynix-stock-analyzer/data.json}"
+OUT="${OUT:-stock-analyzer/hynix/data.json}"
 RANGE="${RANGE:-1y}"
 UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 UPDATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

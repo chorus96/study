@@ -8,7 +8,7 @@
 # 없으면 뉴스 카드를 숨긴다).
 set -uo pipefail
 
-OUT="${NEWS_OUT:-hynix-stock-analyzer/news.json}"
+OUT="${NEWS_OUT:-stock-analyzer/hynix/news.json}"
 NAME="${NAME:-SK하이닉스}"
 QUERY="${NEWS_QUERY:-SK하이닉스}"
 MAXH="${NEWS_MAX_HEADLINES:-8}"
