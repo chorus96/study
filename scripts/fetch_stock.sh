@@ -131,11 +131,13 @@ fi
 
 # ---------- 4) Twelve Data (무료 API 키, 클라우드 IP 허용) ----------
 # GitHub Secret TWELVEDATA_API_KEY 가 설정된 경우에만 시도.
+# 국내는 exchange=KRX가 필요하고, 미국은 심볼만으로 조회한다.
 if [ "$ok" -ne 1 ] && [ -n "${TWELVEDATA_API_KEY:-}" ]; then
-  code=$(fetch "TwelveData" "https://api.twelvedata.com/time_series?symbol=${NUMCODE}&exchange=KRX&interval=1day&outputsize=260&order=ASC&apikey=${TWELVEDATA_API_KEY}")
+  td_ex=""; [ "$MARKET" = "krx" ] && td_ex="&exchange=KRX"
+  code=$(fetch "TwelveData" "https://api.twelvedata.com/time_series?symbol=${NUMCODE}${td_ex}&interval=1day&outputsize=260&order=ASC&apikey=${TWELVEDATA_API_KEY}")
   if [ "$code" = "200" ] && jq -e '.values and (.values|length>0)' "$tmp" >/dev/null 2>&1; then
-    jq --arg name "$NAME" --arg updated "$UPDATED" --arg code "$NUMCODE" '
-      { symbol: ($code + ".KRX"), name: $name, currency: "KRW",
+    jq --arg name "$NAME" --arg updated "$UPDATED" --arg sym "$SYMLABEL" --arg cur "$CURRENCY" '
+      { symbol: $sym, name: $name, currency: $cur,
         price: (.values | last | .close | tonumber),
         marketTime: (.values | last | .datetime | (strptime("%Y-%m-%d") | mktime)),
         updated: $updated,
@@ -148,8 +150,8 @@ fi
 if [ "$ok" -ne 1 ] && [ -n "${FMP_API_KEY:-}" ]; then
   code=$(fetch "FMP" "https://financialmodelingprep.com/api/v3/historical-price-full/${SYMBOL}?serietype=line&apikey=${FMP_API_KEY}")
   if [ "$code" = "200" ] && jq -e '.historical and (.historical|length>0)' "$tmp" >/dev/null 2>&1; then
-    jq --arg name "$NAME" --arg updated "$UPDATED" --arg sym "$SYMBOL" '
-      { symbol: $sym, name: $name, currency: "KRW",
+    jq --arg name "$NAME" --arg updated "$UPDATED" --arg sym "$SYMLABEL" --arg cur "$CURRENCY" '
+      { symbol: $sym, name: $name, currency: $cur,
         price: (.historical[0].close),
         marketTime: (.historical[0].date | strptime("%Y-%m-%d") | mktime),
         updated: $updated,
