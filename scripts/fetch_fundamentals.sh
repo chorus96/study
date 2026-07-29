@@ -31,19 +31,21 @@ if [ "$MARKET" = "krx" ]; then
   echo "  · Naver integration HTTP ${ncode} (${NAME})" >&2
   if [ "$ncode" = "200" ]; then
     eps="$(python3 - "$tmp" "$DATA" <<'PY'
-import sys, json
+import sys, json, re
 try:
     j = json.load(open(sys.argv[1], encoding="utf-8"))
 except Exception:
     print(""); sys.exit(0)
 infos = j.get("totalInfos") or []
-sys.stderr.write("  [Naver totalInfos] " + json.dumps(infos, ensure_ascii=False)[:700] + "\n")
+sys.stderr.write("  [Naver totalInfos] " + json.dumps(infos, ensure_ascii=False)[:3000] + "\n")
 def num(x):
-    x = (x or "").replace(",", "").strip()
-    try:
-        return float(x)
-    except ValueError:
+    # 네이버 값은 "13.53배"·"27,971원"·"46.54%"·"-"처럼 단위/기호가 붙어 있어
+    # 콤마 제거 후 첫 숫자 토큰만 추출한다("-"는 값 없음 → None).
+    if x is None:
         return None
+    s = str(x).replace(",", "").strip()
+    m = re.search(r"-?\d+(?:\.\d+)?", s)
+    return float(m.group()) if m else None
 eps = per = None
 for it in infos:
     c = (it.get("code") or "").lower()
