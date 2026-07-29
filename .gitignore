@@ -2,3 +2,4 @@
 # 실시간 시세·뉴스 결과는 GitHub Actions가 배포 시 종목별로 생성 (커밋 안 함)
 stock-analyzer/*/data.json
 stock-analyzer/*/news.json
+stock-analyzer/*/fundamentals.json
