@@ -25,7 +25,7 @@ if ! python3 -m pip install --quiet --disable-pip-version-check pykrx >/tmp/pip_
 fi
 
 python3 - "$OUT" "$NAME" "$UPDATED" "$NUMCODE" "$CURRENCY" <<'PY' || { echo "  · PER 수집 실패" >&2; exit 0; }
-import sys, json, datetime
+import sys, json, datetime, time
 out, name, updated, code, currency = sys.argv[1:6]
 try:
     from pykrx import stock
@@ -33,10 +33,25 @@ except Exception as e:
     sys.exit("pykrx import 실패: %s" % e)
 end = datetime.datetime.now()
 start = end - datetime.timedelta(days=400)
-# 컬럼: BPS, PER, PBR, EPS, DIV, DPS
-df = stock.get_market_fundamental(start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), code)
+s, e = start.strftime("%Y%m%d"), end.strftime("%Y%m%d")
+
+# KRX 재무 엔드포인트는 시세 조회 직후 호출하면 빈 응답(rate-limit)을 주는 경우가
+# 있어, 잠깐 쉬고 여러 번 재시도한다. (컬럼: BPS, PER, PBR, EPS, DIV, DPS)
+df = None
+for attempt in range(1, 6):
+    time.sleep(2 if attempt == 1 else 3)
+    try:
+        d = stock.get_market_fundamental(s, e, code)
+    except Exception as ex:
+        sys.stderr.write("  · PER 시도 %d 오류: %s\n" % (attempt, ex))
+        continue
+    if d is not None and not d.empty and "PER" in d.columns:
+        df = d
+        sys.stderr.write("  · PER 시도 %d 성공\n" % attempt)
+        break
+    sys.stderr.write("  · PER 시도 %d 빈 응답\n" % attempt)
 if df is None or df.empty or "PER" not in df.columns:
-    sys.exit("PER 데이터 없음")
+    sys.exit("PER 데이터 없음(재시도 소진)")
 pts = []
 for idx, row in df.iterrows():
     d = idx.to_pydatetime().replace(tzinfo=datetime.timezone.utc)
