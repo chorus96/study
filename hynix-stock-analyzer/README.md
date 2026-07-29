@@ -32,10 +32,12 @@
    폰 홈 화면에 추가해 앱처럼 사용합니다. (앱은 상대 경로로 `data.json`을
    읽으므로 프로젝트 경로가 바뀌어도 동작합니다.)
 
-데이터 소스는 Yahoo Finance(`000660.KS`)를 우선 사용하고, 실패 시 Stooq로
-폴백합니다. `data.json`은 배포 시 러너에서 생성되며 저장소에는 커밋되지 않습니다
-(`.gitignore` 처리). 갱신 주기·종목은 `.github/workflows/deploy.yml`,
-`scripts/fetch_stock.sh`에서 조정할 수 있습니다.
+데이터 소스는 여러 곳을 순서대로 시도합니다: **Yahoo → Stooq → pykrx(KRX 공식,
+API 키 불필요) → Twelve Data / FMP(선택, 시크릿 키 설정 시)**. GitHub Actions
+러너(Azure IP)에서는 Yahoo·Stooq가 차단(HTTP 429/제한)되는 경우가 많아, 실제로는
+**`pykrx`가 KRX 공식 데이터를 키 없이 받아옵니다.** `data.json`은 배포 시 러너에서
+생성되며 저장소에는 커밋되지 않습니다(`.gitignore`). 갱신 주기·종목은
+`.github/workflows/deploy.yml`, `scripts/fetch_stock.sh`에서 조정할 수 있습니다.
 
 > 참고: 무료 데이터는 실시간 대비 지연(약 15분)될 수 있고, GitHub Actions 스케줄도
 > 다소 지연될 수 있습니다. 배지의 "갱신" 시각으로 최신 여부를 확인하세요.

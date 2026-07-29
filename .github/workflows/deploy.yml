@@ -6,8 +6,7 @@ name: Deploy Hynix dashboard (live data)
 
 on:
   push:
-    # main = 실제 배포. feature 브랜치는 디버깅 중 자체 테스트용(안정화 후 제거).
-    branches: [ main, claude/hynix-stock-analysis-program-m36qmp ]
+    branches: [ main ]
     paths:
       - 'hynix-stock-analyzer/**'
       - 'scripts/fetch_stock.sh'
@@ -36,8 +35,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Fetch latest SK Hynix price data
-        # 디버깅 중에는 데이터 실패해도 배포를 진행해 Pages 설정 여부까지 확인.
-        continue-on-error: true
         run: bash scripts/fetch_stock.sh
         env:
           SYMBOL: '000660.KS'
