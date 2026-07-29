@@ -1,0 +1,62 @@
+name: Deploy Hynix dashboard (live data)
+
+# SK하이닉스 대시보드를 GitHub Pages로 배포한다.
+# 매 실행마다 최신 시세를 서버(러너)에서 받아 data.json으로 함께 배포하므로,
+# 폰 브라우저는 같은 출처(same-origin)에서 데이터를 읽어 CORS 문제가 없다.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'hynix-stock-analyzer/**'
+      - 'scripts/fetch_stock.sh'
+      - '.github/workflows/deploy.yml'
+  schedule:
+    # KRX 정규장 09:00–15:30 KST = 00:00–06:30 UTC(평일). 30분 간격으로 갱신.
+    # (스케줄 워크플로는 기본 브랜치(main)에서만 동작합니다.)
+    - cron: '*/30 0-7 * * 1-5'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 배포는 하나씩만. 진행 중인 오래된 실행은 취소.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch latest SK Hynix price data
+        run: bash scripts/fetch_stock.sh
+        env:
+          SYMBOL: '000660.KS'
+          NAME: 'SK하이닉스'
+          RANGE: '6mo'
+          OUT: 'hynix-stock-analyzer/data.json'
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: hynix-stock-analyzer
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

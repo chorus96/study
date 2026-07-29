@@ -1,3 +1,4 @@
+<meta charset="utf-8" />
 <title>SK하이닉스 기술적 분석</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="color-scheme" content="light dark" />
@@ -108,6 +109,10 @@
     display: inline-flex; align-items: center; gap: 5px;
   }
   .badge b { color: var(--ink); font-weight: 750; }
+  button.badge { cursor: pointer; font-family: inherit; }
+  button.badge:active { transform: translateY(1px); }
+  #badge-upd { color: var(--up); }
+  #badge-upd .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--up); display: inline-block; }
 
   /* ---- Card ---- */
   .card {
@@ -256,6 +261,8 @@
     </div>
     <div class="badges">
       <span class="badge" id="badge-src">데이터 <b>예시(샘플)</b></span>
+      <span class="badge" id="badge-upd" hidden></span>
+      <button class="badge" id="refresh" type="button" hidden>🔄 새로고침</button>
       <span class="badge">기간 <b id="badge-n">–</b></span>
       <span class="badge">RSI 14 · MACD 12·26·9 · BB 20·2σ</span>
     </div>
@@ -450,11 +457,38 @@
   const cssv = k => getComputedStyle(document.documentElement).getPropertyValue(k).trim();
 
   /* ---------- 상태 ---------- */
-  let state = { closes: [], isSample: true, series: { ma5: true, ma20: true, ma60: true, bb: true }, macdSeries: { line: true, sig: true } };
+  let state = { series: { ma5: true, ma20: true, ma60: true, bb: true }, macdSeries: { line: true, sig: true } };
   let hoverIdx = null;
 
+  /* ---------- 실시간 데이터 로드 (GitHub Pages 등 same-origin) ---------- */
+  async function loadLive() {
+    try {
+      const res = await fetch("./data.json", { cache: "no-store" });
+      if (!res.ok) return null;
+      const j = await res.json();
+      const pts = j.points || [];
+      const closes = pts.map(p => p.c).filter(v => isFinite(v) && v > 0);
+      if (closes.length < 5) return null;
+      const dates = pts.map(p => {
+        const d = new Date(p.t * 1000);
+        return d.toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit", timeZone: "Asia/Seoul" });
+      });
+      return { closes, dates, updated: j.updated || null, marketTime: j.marketTime || null,
+        name: j.name || "SK하이닉스", symbol: j.symbol || "000660.KS" };
+    } catch (e) { return null; }
+  }
+
+  function fmtUpdated(iso, unix) {
+    let d = null;
+    if (iso) d = new Date(iso);          // 데이터 수집(갱신) 시각 우선
+    else if (unix) d = new Date(unix * 1000);
+    if (!d || isNaN(d)) return "";
+    return d.toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul", hour12: false });
+  }
+
   /* ---------- 메인 계산 & 렌더 ---------- */
-  function analyze(closes, isSample) {
+  function analyze(closes, meta) {
+    meta = meta || { source: "sample" };
     if (closes.length < 5) return null;
     const ma5 = sma(closes, 5), ma20 = sma(closes, 20), ma60 = sma(closes, 60);
     const r = rsi(closes, 14);
@@ -494,7 +528,9 @@
 
     return { closes, ma5, ma20, ma60, rsi: r, macd: m, bb, price, chg, chgPct,
       hi: Math.max(...closes), lo: Math.min(...closes), sigma: stdev(closes, 20),
-      factors: F, score, tag, key, isSample, n: closes.length };
+      factors: F, score, tag, key, n: closes.length,
+      source: meta.source, dates: meta.dates || null, updated: meta.updated || null,
+      marketTime: meta.marketTime || null, name: meta.name || "SK하이닉스", symbol: meta.symbol || "000660.KS" };
   }
 
   function render(A) {
@@ -503,7 +539,19 @@
     // 헤더 배지
     document.getElementById("badge-n").textContent = A.n + "일";
     const bsrc = document.getElementById("badge-src");
-    bsrc.innerHTML = A.isSample ? '데이터 <b>예시(샘플)</b>' : '데이터 <b>직접 입력</b>';
+    const srcLabel = { live: "실시간(지연)", manual: "직접 입력", sample: "예시(샘플)" }[A.source] || "예시(샘플)";
+    bsrc.innerHTML = "데이터 <b>" + srcLabel + "</b>";
+    const bupd = document.getElementById("badge-upd");
+    const refresh = document.getElementById("refresh");
+    if (A.source === "live") {
+      const t = fmtUpdated(A.updated, A.marketTime);
+      bupd.innerHTML = '<span class="live-dot"></span>' + (t ? t + " 갱신" : "실시간");
+      bupd.hidden = false;
+      refresh.hidden = false;
+    } else {
+      bupd.hidden = true;
+      refresh.hidden = true;
+    }
 
     // 히어로
     document.getElementById("px").textContent = fmt(A.price);
@@ -687,6 +735,17 @@
     // endpoint marker
     svg.appendChild(el("circle", { cx: x(n - 1), cy: y(A.closes[n - 1]), r: 3.2, fill: cssv("--ink") }));
 
+    // x축 날짜 라벨 (실시간 데이터에 날짜가 있을 때)
+    if (A.dates && A.dates.length === n) {
+      const idxs = [0, Math.round((n - 1) / 3), Math.round((n - 1) * 2 / 3), n - 1];
+      idxs.forEach((i, k) => {
+        const anchor = k === 0 ? "start" : k === idxs.length - 1 ? "end" : "middle";
+        const t = el("text", { class: "axis-txt", x: Math.max(PAD.l, Math.min(W - PAD.r, x(i))), y: H - 4, "text-anchor": anchor });
+        t.textContent = A.dates[i];
+        svg.appendChild(t);
+      });
+    }
+
     svg._meta = { x, y, n, W, H };
     attachHover(svg, "tip-price", A, buildPriceTip);
   }
@@ -793,6 +852,7 @@
   }
 
   function dateLabel(A, idx) {
+    if (A.dates && A.dates[idx]) return A.dates[idx] + (idx === A.n - 1 ? " · 최근" : "");
     const back = A.n - 1 - idx;
     return back === 0 ? "최근" : back + "일 전";
   }
@@ -834,7 +894,7 @@
     const closes = parseInput(document.getElementById("ta").value, order);
     if (closes.length < 5) { err.textContent = "숫자를 5개 이상 입력해 주세요. (권장 30개 이상)"; return; }
     err.textContent = "";
-    const A = analyze(closes, false);
+    const A = analyze(closes, { source: "manual" });
     hoverIdx = null;
     render(A);
     document.getElementById("io").open = false;
@@ -845,16 +905,22 @@
     document.getElementById("ta").value = s.join("\n");
     document.querySelector('#order [data-ord="old"]').click();
     document.getElementById("err").textContent = "";
-    const A = analyze(s, true);
     hoverIdx = null;
-    render(A);
+    render(analyze(s, { source: "sample" }));
+  };
+  document.getElementById("refresh").onclick = async () => {
+    const btn = document.getElementById("refresh");
+    btn.disabled = true;
+    const live = await loadLive();
+    btn.disabled = false;
+    if (live) { hoverIdx = null; render(analyze(live.closes, { source: "live", dates: live.dates, updated: live.updated, marketTime: live.marketTime, name: live.name, symbol: live.symbol })); }
   };
 
-  // 초기 로드
-  (function init() {
-    const s = sampleData(130);
-    const A = analyze(s, true);
-    render(A);
+  // 초기 로드: 실시간 데이터(same-origin data.json) 우선, 없으면 예시 데이터로 폴백
+  (async function init() {
+    const live = await loadLive();
+    if (live) render(analyze(live.closes, { source: "live", dates: live.dates, updated: live.updated, marketTime: live.marketTime, name: live.name, symbol: live.symbol }));
+    else render(analyze(sampleData(130), { source: "sample" }));
     // 테마 토글 시 색상 재적용
     const mo = new MutationObserver(() => { if (currentA) render(currentA); });
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
