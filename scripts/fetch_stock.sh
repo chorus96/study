@@ -39,18 +39,28 @@ fetch() { # $1=label $2=url [$3..=extra curl args]
 echo "데이터 수집 시작 (symbol=${SYMBOL}, code=${NUMCODE})"
 
 # ---------- 1) Yahoo Finance ----------
-for host in query1.finance.yahoo.com query2.finance.yahoo.com; do
-  code=$(fetch "Yahoo(${host})" "https://${host}/v8/finance/chart/${SYMBOL}?range=${RANGE}&interval=1d")
-  if [ "$code" = "200" ] && jq -e '.chart.result[0].timestamp and .chart.result[0].indicators.quote[0].close' "$tmp" >/dev/null 2>&1; then
-    jq --arg name "$NAME" --arg updated "$UPDATED" '
-      .chart.result[0] as $r
-      | { symbol: $r.meta.symbol, name: $name, currency: $r.meta.currency,
-          price: $r.meta.regularMarketPrice, marketTime: $r.meta.regularMarketTime, updated: $updated,
-          points: ([ $r.timestamp, $r.indicators.quote[0].close ]
-                   | transpose | map(select(.[1] != null) | { t: .[0], c: .[1] })) }' "$tmp" > "$OUT"
-    ok=1; echo "→ 성공: Yahoo Finance (${host})"; break
-  fi
-done
+# Yahoo는 GitHub Actions(Azure) IP에 429(rate-limit)를 자주 주지만 간헐적으로 통과한다.
+# 미국 종목은 무키로 쓸 다른 소스가 없어, 통과할 때까지 여러 번 재시도한다.
+# 국내(KRX) 종목은 pykrx가 안정적이므로 Yahoo를 건너뛰어 US용 rate 여유를 남긴다.
+if [ "$MARKET" != "krx" ]; then
+  attempts="${YAHOO_ATTEMPTS:-6}"
+  for try in $(seq 1 "$attempts"); do
+    [ "$ok" -eq 1 ] && break
+    for host in query1.finance.yahoo.com query2.finance.yahoo.com; do
+      code=$(fetch "Yahoo(${host}) #${try}" "https://${host}/v8/finance/chart/${SYMBOL}?range=${RANGE}&interval=1d")
+      if [ "$code" = "200" ] && jq -e '.chart.result[0].timestamp and .chart.result[0].indicators.quote[0].close' "$tmp" >/dev/null 2>&1; then
+        jq --arg name "$NAME" --arg updated "$UPDATED" '
+          .chart.result[0] as $r
+          | { symbol: $r.meta.symbol, name: $name, currency: $r.meta.currency,
+              price: $r.meta.regularMarketPrice, marketTime: $r.meta.regularMarketTime, updated: $updated,
+              points: ([ $r.timestamp, $r.indicators.quote[0].close ]
+                       | transpose | map(select(.[1] != null) | { t: .[0], c: .[1] })) }' "$tmp" > "$OUT"
+        ok=1; echo "→ 성공: Yahoo Finance (${host}, 시도 ${try})"; break
+      fi
+    done
+    [ "$ok" -ne 1 ] && [ "$try" -lt "$attempts" ] && sleep 4
+  done
+fi
 
 # ---------- 2) Stooq CSV (국내 .kr / 미국 .us, 무키) ----------
 if [ "$ok" -ne 1 ]; then
