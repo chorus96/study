@@ -81,11 +81,11 @@ else
   # FMP 무료 플랜은 현재 stable 엔드포인트를 사용(레거시 /api/v3 는 유료 전환됨).
   # stable 실패 시 v3 로 폴백하고, 진단을 위해 HTTP 코드·본문 앞부분을 로그로 남긴다.
   code=$(curl -sS --max-time 30 -A "$UA" -w '%{http_code}' -o "$tmp" \
-    "https://financialmodelingprep.com/stable/income-statement?symbol=${SYMBOL}&period=annual&limit=6&apikey=${FMP_API_KEY}" 2>/dev/null || echo 000)
+    "https://financialmodelingprep.com/stable/income-statement?symbol=${SYMBOL}&period=annual&limit=5&apikey=${FMP_API_KEY}" 2>/dev/null || echo 000)
   echo "  · FMP(stable) HTTP ${code}: $(head -c 160 "$tmp" 2>/dev/null | tr '\n' ' ')" >&2
   if [ "$code" != "200" ]; then
     code=$(curl -sS --max-time 30 -A "$UA" -w '%{http_code}' -o "$tmp" \
-      "https://financialmodelingprep.com/api/v3/income-statement/${SYMBOL}?period=annual&limit=6&apikey=${FMP_API_KEY}" 2>/dev/null || echo 000)
+      "https://financialmodelingprep.com/api/v3/income-statement/${SYMBOL}?period=annual&limit=5&apikey=${FMP_API_KEY}" 2>/dev/null || echo 000)
     echo "  · FMP(v3) HTTP ${code}: $(head -c 160 "$tmp" 2>/dev/null | tr '\n' ' ')" >&2
   fi
   if [ "$code" != "200" ]; then echo "  · FMP 요청 실패(HTTP ${code})" >&2; exit 0; fi
