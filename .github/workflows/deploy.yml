@@ -45,6 +45,8 @@ jobs:
           path: |
             stock-analyzer/micron/data.json
             stock-analyzer/nvidia/data.json
+            stock-analyzer/micron/financials.json
+            stock-analyzer/nvidia/financials.json
           key: us-price-${{ github.run_id }}
           restore-keys: |
             us-price-
@@ -185,7 +187,7 @@ jobs:
           OUT: 'stock-analyzer/samsung/financials.json'
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
 
-      - name: Fetch Micron operating income (FMP)
+      - name: Fetch Micron operating income (FMP → Alpha Vantage)
         continue-on-error: true
         run: bash scripts/fetch_financials.sh
         env:
@@ -195,8 +197,9 @@ jobs:
           CURRENCY: 'USD'
           OUT: 'stock-analyzer/micron/financials.json'
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
 
-      - name: Fetch NVIDIA operating income (FMP)
+      - name: Fetch NVIDIA operating income (FMP → Alpha Vantage)
         continue-on-error: true
         run: bash scripts/fetch_financials.sh
         env:
@@ -206,6 +209,7 @@ jobs:
           CURRENCY: 'USD'
           OUT: 'stock-analyzer/nvidia/financials.json'
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
 
       # 이번 실행의 미국 시세(신규 성공분 또는 복원분)를 캐시에 저장 → 다음 실행에서 복원.
       - name: Save US price data to cache
@@ -215,6 +219,8 @@ jobs:
           path: |
             stock-analyzer/micron/data.json
             stock-analyzer/nvidia/data.json
+            stock-analyzer/micron/financials.json
+            stock-analyzer/nvidia/financials.json
           key: us-price-${{ github.run_id }}
 
       - name: Configure Pages

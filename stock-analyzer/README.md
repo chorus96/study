@@ -56,10 +56,12 @@ PER 추이는 `scripts/fetch_fundamentals.sh`가 국내 종목에 한해 **pykrx
 일별 PER 시계열을 받아 종목별 `fundamentals.json`으로 저장합니다. 미국 종목의 과거
 PER 시계열은 무료 티어에 없어 생략합니다.
 
-영업이익(연간)은 `scripts/fetch_financials.sh`가 국내는 **DART 오픈API**
-(`DART_API_KEY` 시크릿 + 종목별 `corp_code`), 미국은 **FMP**(`FMP_API_KEY` 시크릿)
-로 받아 `financials.json`으로 저장합니다. 두 키 모두 **무료(카드 불필요)**이며,
-없으면 해당 카드는 자동으로 숨겨집니다.
+영업이익(연간)은 `scripts/fetch_financials.sh`가 저장합니다. 국내는 **DART 오픈API**
+(`DART_API_KEY` + 종목별 `corp_code`). 미국은 **FMP**(`FMP_API_KEY`)를 먼저 쓰고,
+FMP 무료 플랜이 막는 종목(예: MU)은 **Alpha Vantage**(`ALPHAVANTAGE_API_KEY`,
+무료 25회/일)로 폴백합니다. 모든 키가 **무료(카드 불필요)**이며, 없으면 해당 카드는
+자동으로 숨겨집니다. 미국 `financials.json`은 캐시에 저장돼, 알파밴티지 한도 초과로
+수집이 건너뛰어진 회차에도 직전 데이터를 유지합니다.
 
 뉴스 심리는 `scripts/fetch_news.sh`가 **Google News RSS(키 불필요)**에서 종목별
 최신 헤드라인을 받아, 한국어 금융 키워드(예: `수주·신고가·흑자` = 긍정, `급락·감소·
