@@ -1,5 +1,5 @@
 <meta charset="utf-8" />
-<title>SK하이닉스 기술적 분석</title>
+<title>반도체 대장주 기술적 분석 · SK하이닉스 · 삼성전자</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="color-scheme" content="light dark" />
 <style>
@@ -102,6 +102,8 @@
   .ticker { font-size: 1.28rem; font-weight: 750; letter-spacing: -0.02em; }
   .ticker-code { font-size: .82rem; color: var(--muted); font-weight: 600; }
   .kicker { font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  .stock-seg { align-self: flex-start; margin: 2px 0 4px; }
+  .stock-seg button { font-size: .92rem; font-weight: 700; padding: 8px 16px; }
   .badges { display: flex; gap: 6px; flex-wrap: wrap; }
   .badge {
     font-size: .68rem; font-weight: 650; padding: 3px 9px; border-radius: 999px;
@@ -280,9 +282,13 @@
 <div class="wrap">
   <header>
     <span class="kicker">기술적 분석 · Technical Analysis</span>
+    <div class="seg stock-seg" id="stock-seg" role="tablist" aria-label="종목 선택">
+      <button type="button" data-stock="hynix" aria-pressed="true">SK하이닉스</button>
+      <button type="button" data-stock="samsung" aria-pressed="false">삼성전자</button>
+    </div>
     <div class="ticker-row">
-      <span class="ticker">SK하이닉스</span>
-      <span class="ticker-code">KRX 000660</span>
+      <span class="ticker" id="tk-name">SK하이닉스</span>
+      <span class="ticker-code" id="tk-code">KRX 000660</span>
     </div>
     <div class="badges">
       <span class="badge" id="badge-src">데이터 <b>예시(샘플)</b></span>
@@ -422,8 +428,22 @@
   const fmt = n => n == null || isNaN(n) ? "–" : Math.round(n).toLocaleString("ko-KR");
   const fmt1 = n => n == null || isNaN(n) ? "–" : n.toLocaleString("ko-KR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
+  /* ---------- 종목 설정 (샘플 시세 수준·데이터 경로) ---------- */
+  const STOCKS = {
+    hynix: {
+      name: "SK하이닉스", code: "000660", symbol: "000660.KS", dir: "hynix",
+      sample: { base: 1320000, floor: 800000, drift: 2400, shock: 46000, step: 500 },
+    },
+    samsung: {
+      name: "삼성전자", code: "005930", symbol: "005930.KS", dir: "samsung",
+      sample: { base: 74000, floor: 45000, drift: 140, shock: 2600, step: 50 },
+    },
+  };
+  let curStock = "hynix";
+
   /* ---------- 샘플 데이터 (임의 생성, 실제 시세 아님) ---------- */
-  function sampleData(n) {
+  function sampleData(n, cfg) {
+    cfg = cfg || STOCKS.hynix.sample;
     // 시드 고정 PRNG(mulberry32)로 재현 가능한 예시 시세 생성
     let t = 0x9e3779b9;
     const rnd = () => {
@@ -433,12 +453,12 @@
       return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
     };
     const out = [];
-    let px = 1320000;                                        // 실제 시세 수준(약 130만원대)
+    let px = cfg.base;                                        // 종목별 실제 시세 수준
     for (let i = 0; i < n; i++) {
-      const drift = 2400 * Math.sin(i / 17) + 800;           // 완만한 추세
-      const shock = (rnd() - 0.5) * 46000;                   // 일간 변동
-      px = Math.max(800000, px + drift + shock);
-      out.push(Math.round(px / 500) * 500);
+      const drift = cfg.drift * Math.sin(i / 17) + cfg.drift / 3; // 완만한 추세
+      const shock = (rnd() - 0.5) * cfg.shock;               // 일간 변동
+      px = Math.max(cfg.floor, px + drift + shock);
+      out.push(Math.round(px / cfg.step) * cfg.step);
     }
     return out;
   }
@@ -451,9 +471,9 @@
   let hoverIdx = null;
 
   /* ---------- 실시간 데이터 로드 (GitHub Pages 등 same-origin) ---------- */
-  async function loadLive() {
+  async function loadLive(dir) {
     try {
-      const res = await fetch("./data.json", { cache: "no-store" });
+      const res = await fetch(`./${dir}/data.json`, { cache: "no-store" });
       if (!res.ok) return null;
       const j = await res.json();
       const pts = j.points || [];
@@ -464,7 +484,7 @@
         return d.toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit", timeZone: "Asia/Seoul" });
       });
       return { closes, dates, updated: j.updated || null, marketTime: j.marketTime || null,
-        name: j.name || "SK하이닉스", symbol: j.symbol || "000660.KS" };
+        name: j.name || null, symbol: j.symbol || null };
     } catch (e) { return null; }
   }
 
@@ -480,9 +500,9 @@
   const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const sentiClass = s => s === "긍정" ? "s-pos" : s === "부정" ? "s-neg" : "s-neu";
 
-  async function loadNews() {
+  async function loadNews(dir) {
     try {
-      const res = await fetch("./news.json", { cache: "no-store" });
+      const res = await fetch(`./${dir}/news.json`, { cache: "no-store" });
       if (!res.ok) return null;
       const j = await res.json();
       if (!j.analysis || !j.analysis.sentiment) return null;
@@ -920,22 +940,37 @@
     return { html, my: meta.y(A.macd.line[idx]) };
   }
 
+  /* ---------- 종목 선택 (실시간 우선, 없으면 예시 폴백) ---------- */
+  async function selectStock(key) {
+    if (!STOCKS[key]) key = "hynix";
+    curStock = key;
+    const cfg = STOCKS[key];
+    document.querySelectorAll("#stock-seg button").forEach(b =>
+      b.setAttribute("aria-pressed", String(b.dataset.stock === key)));
+    document.getElementById("tk-name").textContent = cfg.name;
+    document.getElementById("tk-code").textContent = "KRX " + cfg.code;
+    document.title = cfg.name + " 기술적 분석";
+    hoverIdx = null;
+    const [live, news] = await Promise.all([loadLive(cfg.dir), loadNews(cfg.dir)]);
+    if (live) render(analyze(live.closes, { source: "live", dates: live.dates, updated: live.updated, marketTime: live.marketTime, name: live.name || cfg.name, symbol: live.symbol || cfg.symbol }));
+    else render(analyze(sampleData(260, cfg.sample), { source: "sample", name: cfg.name, symbol: cfg.symbol }));
+    renderNews(news);
+  }
+
   /* ---------- 이벤트 ---------- */
+  document.querySelectorAll("#stock-seg button").forEach(b =>
+    b.addEventListener("click", () => { if (b.dataset.stock !== curStock) selectStock(b.dataset.stock); }));
+
   document.getElementById("refresh").onclick = async () => {
     const btn = document.getElementById("refresh");
     btn.disabled = true;
-    const [live, news] = await Promise.all([loadLive(), loadNews()]);
+    await selectStock(curStock);
     btn.disabled = false;
-    if (live) { hoverIdx = null; render(analyze(live.closes, { source: "live", dates: live.dates, updated: live.updated, marketTime: live.marketTime, name: live.name, symbol: live.symbol })); }
-    renderNews(news);
   };
 
-  // 초기 로드: 실시간 시세 + AI 뉴스 분석(same-origin) 우선, 없으면 예시 데이터로 폴백
+  // 초기 로드: 현재 종목의 실시간 시세 + 뉴스(same-origin) 우선, 없으면 예시로 폴백
   (async function init() {
-    const [live, news] = await Promise.all([loadLive(), loadNews()]);
-    if (live) render(analyze(live.closes, { source: "live", dates: live.dates, updated: live.updated, marketTime: live.marketTime, name: live.name, symbol: live.symbol }));
-    else render(analyze(sampleData(260), { source: "sample" }));
-    renderNews(news);
+    await selectStock(curStock);
     // 테마 토글 시 색상 재적용
     const mo = new MutationObserver(() => { if (currentA) render(currentA); });
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
