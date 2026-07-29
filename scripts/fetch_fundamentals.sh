@@ -38,6 +38,16 @@ if [ "$MARKET" = "krx" ]; then
   done
   eps="$(python3 - "$tmp" <<'PY'
 import sys, json
+
+def amt(s):
+    s = (s or "").strip().replace(",", "")
+    neg = s.startswith("(") and s.endswith(")"); s = s.strip("()")
+    try:
+        v = float(s)
+    except ValueError:
+        return None
+    return -v if neg else v
+
 best_year, best = None, None
 for line in open(sys.argv[1], encoding="utf-8"):
     line = line.strip()
@@ -49,22 +59,24 @@ for line in open(sys.argv[1], encoding="utf-8"):
         continue
     if j.get("status") != "000":
         continue
+    # 진단: 이 보고서의 모든 '주당' 계정을 로그로 덤프
+    for it in j.get("list", []):
+        nm = (it.get("account_nm") or "")
+        if "주당" in nm:
+            sys.stderr.write("  [EPS후보] y=%s sj=%s id=%s nm=%s thstrm=%s\n" % (
+                it.get("bsns_year"), it.get("sj_div"), it.get("account_id"),
+                nm.strip(), it.get("thstrm_amount")))
+    # 선택: 기본주당이익(손실)
     for it in j.get("list", []):
         nm = (it.get("account_nm") or "").replace(" ", "")
         aid = it.get("account_id") or ""
         if aid == "ifrs-full_BasicEarningsLossPerShare" or "기본주당" in nm:
             yr = str(it.get("bsns_year") or "")
-            s = (it.get("thstrm_amount") or "").strip().replace(",", "")
-            neg = s.startswith("(") and s.endswith(")"); s = s.strip("()")
-            try:
-                v = float(s)
-            except ValueError:
-                v = None
-            if neg and v is not None:
-                v = -v
+            v = amt(it.get("thstrm_amount"))
             if yr and v is not None and (best_year is None or yr > best_year):
                 best_year, best = yr, v
             break
+sys.stderr.write("  [EPS선택] year=%s eps=%s\n" % (best_year, best))
 print("" if best is None else repr(best))
 PY
 )"
