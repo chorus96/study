@@ -37,7 +37,6 @@ try:
 except Exception:
     print(""); sys.exit(0)
 infos = j.get("totalInfos") or []
-sys.stderr.write("  [Naver totalInfos] " + json.dumps(infos, ensure_ascii=False)[:3000] + "\n")
 def num(x):
     # 네이버 값은 "13.53배"·"27,971원"·"46.54%"·"-"처럼 단위/기호가 붙어 있어
     # 콤마 제거 후 첫 숫자 토큰만 추출한다("-"는 값 없음 → None).
@@ -64,6 +63,9 @@ if eps is None and per not in (None, 0):
         eps = d["points"][-1]["c"] / per
     except Exception:
         pass
+# EPS 추출 실패 시에만 원본 totalInfos를 덤프(디버깅용). 성공 시엔 요약 한 줄만.
+if eps is None:
+    sys.stderr.write("  [Naver totalInfos] " + json.dumps(infos, ensure_ascii=False)[:3000] + "\n")
 sys.stderr.write("  [Naver EPS] eps=%s per=%s\n" % (eps, per))
 print("" if eps is None else repr(eps))
 PY

@@ -20,7 +20,8 @@
 - **색상 관례**: 상승=빨강, 하락=파랑 (모든 종목에 한국 시장 관례 일관 적용)
 - **지표**: MA5·20·60, RSI(14), MACD(12·26·9), 볼린저밴드(20, 2σ)
 - **PER(주가수익비율) 일별 추이**: 최근 EPS(주당순이익) 기준으로 `PER = 종가 ÷ EPS`를
-  일별로 그립니다. 국내는 **DART**, 미국은 **FMP**(엔비디아)·**Alpha Vantage
+  일별로 그립니다. 국내는 **네이버 금융**(시세와 같은 계열의 실적 EPS라 PER이 네이버
+  표시값과 일치, 실패 시 **DART** 폴백), 미국은 **FMP**(엔비디아)·**Alpha Vantage
   OVERVIEW**(마이크론)에서 EPS를 받습니다. 단일 EPS라 추이선이 부드럽고, 적자로
   EPS가 음수면 PER은 생략합니다.
 - **영업이익(연간) 막대그래프**: 국내는 **DART**(전자공시), 미국은 **FMP** 무료
@@ -54,9 +55,12 @@
 하위에 각각 생성되며 저장소에는 커밋되지 않습니다(`.gitignore`). 갱신 주기·종목은
 `.github/workflows/deploy.yml`, `scripts/fetch_stock.sh`에서 조정할 수 있습니다.
 
-PER 추이는 `scripts/fetch_fundamentals.sh`가 국내 종목에 한해 **pykrx(무키)**로
-일별 PER 시계열을 받아 종목별 `fundamentals.json`으로 저장합니다. 미국 종목의 과거
-PER 시계열은 무료 티어에 없어 생략합니다.
+PER 추이는 `scripts/fetch_fundamentals.sh`가 최근 실적 EPS를 받아 `PER = 종가 ÷ EPS`를
+일별로 계산해 종목별 `fundamentals.json`으로 저장합니다. 국내는 **네이버 금융
+integration API**의 실적 EPS(시세와 동일 출처라 PER이 네이버 표시값과 일치, 실패 시
+**DART** 기본주당이익으로 폴백), 미국은 **FMP**(엔비디아)·**Alpha Vantage
+OVERVIEW**(마이크론)의 EPS를 씁니다. 네이버 값은 `13.53배`·`103,521원`처럼 단위가
+붙어 있어 숫자만 추출해 파싱합니다.
 
 영업이익(연간)은 `scripts/fetch_financials.sh`가 저장합니다. 국내는 **DART 오픈API**
 (`DART_API_KEY` + 종목별 `corp_code`). 미국은 **FMP**(`FMP_API_KEY`)를 먼저 쓰고,
