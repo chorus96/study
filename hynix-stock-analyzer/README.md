@@ -28,8 +28,9 @@
 3. **Actions** 탭에서 `Deploy Hynix dashboard (live data)` 워크플로를
    한 번 실행(`Run workflow`)하거나, 스케줄(평일 09:00–15:30 KST, 30분 간격)을
    기다립니다.
-4. 배포 완료 후 나오는 Pages URL(`https://<사용자>.github.io/study/hynix-stock-analyzer/`)을
-   폰 홈 화면에 추가해 앱처럼 사용합니다.
+4. 배포 완료 후 나오는 Pages URL(`https://chorus96.github.io/study/`)을
+   폰 홈 화면에 추가해 앱처럼 사용합니다. (앱은 상대 경로로 `data.json`을
+   읽으므로 프로젝트 경로가 바뀌어도 동작합니다.)
 
 데이터 소스는 Yahoo Finance(`000660.KS`)를 우선 사용하고, 실패 시 Stooq로
 폴백합니다. `data.json`은 배포 시 러너에서 생성되며 저장소에는 커밋되지 않습니다
