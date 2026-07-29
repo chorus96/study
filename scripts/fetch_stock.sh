@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
-# SK하이닉스(000660) 일별 종가를 받아 same-origin data.json으로 저장한다.
-# GitHub Actions 러너에서 실행된다. 여러 소스를 순서대로 시도하고, 각 시도의
-# HTTP 상태를 로그로 남긴다. (진단 가능하도록 -e 미사용)
+# 종목 일별 종가를 받아 same-origin data.json으로 저장한다. 국내(KRX)·미국(US)
+# 종목을 모두 지원한다. GitHub Actions 러너에서 실행되며 여러 소스를 순서대로
+# 시도하고, 각 시도의 HTTP 상태를 로그로 남긴다. (진단 가능하도록 -e 미사용)
+#
+# 시장별 소스:
+#   krx: Yahoo → Stooq(.kr) → pykrx(KRX 공식, 무키) → TwelveData/FMP(선택)
+#   us : Yahoo → Stooq(.us, 무키) → TwelveData/FMP(선택)   ※ pykrx 제외
 set -uo pipefail
 
-SYMBOL="${SYMBOL:-000660.KS}"          # Yahoo 형식
-NUMCODE="${NUMCODE:-000660}"           # 숫자 코드
+SYMBOL="${SYMBOL:-000660.KS}"          # Yahoo 형식(예: 000660.KS, NVDA)
+NUMCODE="${NUMCODE:-000660}"           # 코드/티커(예: 000660, NVDA)
 NAME="${NAME:-SK하이닉스}"
 OUT="${OUT:-stock-analyzer/hynix/data.json}"
 RANGE="${RANGE:-1y}"
+MARKET="${MARKET:-krx}"                # krx | us
+CURRENCY="${CURRENCY:-KRW}"            # KRW | USD
+STOOQ_S="${STOOQ_S:-${NUMCODE}.kr}"    # Stooq 심볼(국내 ${코드}.kr, 미국 ${티커}.us)
+SYMLABEL="${SYMLABEL:-$SYMBOL}"        # data.json 에 기록할 심볼 표기
 UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 UPDATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
@@ -44,13 +52,13 @@ for host in query1.finance.yahoo.com query2.finance.yahoo.com; do
   fi
 done
 
-# ---------- 2) Stooq CSV ----------
+# ---------- 2) Stooq CSV (국내 .kr / 미국 .us, 무키) ----------
 if [ "$ok" -ne 1 ]; then
-  code=$(fetch "Stooq" "https://stooq.com/q/d/l/?s=${NUMCODE}.kr&i=d")
+  code=$(fetch "Stooq(${STOOQ_S})" "https://stooq.com/q/d/l/?s=${STOOQ_S}&i=d")
   if [ "$code" = "200" ] && head -1 "$tmp" | grep -qi "date"; then
-    if python3 - "$tmp" "$OUT" "$NAME" "$UPDATED" "$NUMCODE" <<'PY'
+    if python3 - "$tmp" "$OUT" "$NAME" "$UPDATED" "$SYMLABEL" "$CURRENCY" <<'PY'
 import sys, json, csv, datetime
-src, out, name, updated, numcode = sys.argv[1:6]
+src, out, name, updated, symbol, currency = sys.argv[1:7]
 rows = []
 with open(src, newline="") as f:
     for row in csv.DictReader(f):
@@ -64,18 +72,18 @@ with open(src, newline="") as f:
 rows = rows[-260:]
 if len(rows) < 5:
     sys.exit("Stooq: 데이터 부족")
-json.dump({"symbol": numcode + ".KR", "name": name, "currency": "KRW",
+json.dump({"symbol": symbol, "name": name, "currency": currency,
            "price": rows[-1]["c"], "marketTime": rows[-1]["t"],
            "updated": updated, "points": rows},
           open(out, "w", encoding="utf-8"), ensure_ascii=False)
 print("  Stooq rows:", len(rows))
 PY
-    then ok=1; echo "→ 성공: Stooq"; fi
+    then ok=1; echo "→ 성공: Stooq (${STOOQ_S})"; fi
   fi
 fi
 
-# ---------- 3) pykrx (KRX 공식 데이터, API 키 불필요) ----------
-if [ "$ok" -ne 1 ]; then
+# ---------- 3) pykrx (KRX 공식 데이터, API 키 불필요) — 국내 종목만 ----------
+if [ "$ok" -ne 1 ] && [ "$MARKET" = "krx" ]; then
   echo "  · pykrx: 설치 및 조회 시도..." >&2
   if python3 -m pip install --quiet --disable-pip-version-check pykrx >/tmp/pip.log 2>&1; then
     if python3 - "$OUT" "$NAME" "$UPDATED" "$NUMCODE" <<'PY'

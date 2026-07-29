@@ -102,8 +102,8 @@
   .ticker { font-size: 1.28rem; font-weight: 750; letter-spacing: -0.02em; }
   .ticker-code { font-size: .82rem; color: var(--muted); font-weight: 600; }
   .kicker { font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
-  .stock-seg { align-self: flex-start; margin: 2px 0 4px; }
-  .stock-seg button { font-size: .92rem; font-weight: 700; padding: 8px 16px; }
+  .stock-seg { align-self: stretch; flex-wrap: wrap; margin: 2px 0 4px; }
+  .stock-seg button { flex: 1 1 auto; font-size: .86rem; font-weight: 700; padding: 8px 10px; white-space: nowrap; }
   .badges { display: flex; gap: 6px; flex-wrap: wrap; }
   .badge {
     font-size: .68rem; font-weight: 650; padding: 3px 9px; border-radius: 999px;
@@ -285,6 +285,8 @@
     <div class="seg stock-seg" id="stock-seg" role="tablist" aria-label="종목 선택">
       <button type="button" data-stock="hynix" aria-pressed="true">SK하이닉스</button>
       <button type="button" data-stock="samsung" aria-pressed="false">삼성전자</button>
+      <button type="button" data-stock="micron" aria-pressed="false">마이크론</button>
+      <button type="button" data-stock="nvidia" aria-pressed="false">엔비디아</button>
     </div>
     <div class="ticker-row">
       <span class="ticker" id="tk-name">SK하이닉스</span>
@@ -302,7 +304,7 @@
   <!-- HERO -->
   <section class="card hero">
     <div class="price-line">
-      <div><span class="price num" id="px">–</span><span class="won">원</span></div>
+      <div><span class="price num" id="px">–</span><span class="won" id="px-unit">원</span></div>
       <span class="chg-pill flat" id="chg"><span class="arrow">–</span><span class="num" id="chg-abs">0</span><span class="num" id="chg-pct">(0.00%)</span></span>
     </div>
     <div class="hero-sub">
@@ -427,19 +429,38 @@
   /* ---------- 포맷 ---------- */
   const fmt = n => n == null || isNaN(n) ? "–" : Math.round(n).toLocaleString("ko-KR");
   const fmt1 = n => n == null || isNaN(n) ? "–" : n.toLocaleString("ko-KR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  // 통화 인식 가격 포맷: KRW는 정수(원), USD는 소수점 2자리($)
+  const fmtPx = n => n == null || isNaN(n) ? "–"
+    : curCurrency === "USD"
+      ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : Math.round(n).toLocaleString("ko-KR");
+  const unitLabel = () => curCurrency === "USD" ? "USD" : "원";
 
-  /* ---------- 종목 설정 (샘플 시세 수준·데이터 경로) ---------- */
+  /* ---------- 종목 설정 (통화·거래소·샘플 시세 수준·데이터 경로) ---------- */
   const STOCKS = {
     hynix: {
       name: "SK하이닉스", code: "000660", symbol: "000660.KS", dir: "hynix",
+      currency: "KRW", exch: "KRX",
       sample: { base: 1320000, floor: 800000, drift: 2400, shock: 46000, step: 500 },
     },
     samsung: {
       name: "삼성전자", code: "005930", symbol: "005930.KS", dir: "samsung",
+      currency: "KRW", exch: "KRX",
       sample: { base: 74000, floor: 45000, drift: 140, shock: 2600, step: 50 },
+    },
+    micron: {
+      name: "마이크론", code: "MU", symbol: "MU", dir: "micron",
+      currency: "USD", exch: "NASDAQ",
+      sample: { base: 110, floor: 60, drift: 0.9, shock: 5, step: 0.01 },
+    },
+    nvidia: {
+      name: "엔비디아", code: "NVDA", symbol: "NVDA", dir: "nvidia",
+      currency: "USD", exch: "NASDAQ",
+      sample: { base: 175, floor: 90, drift: 1.2, shock: 7, step: 0.01 },
     },
   };
   let curStock = "hynix";
+  let curCurrency = "KRW";
 
   /* ---------- 샘플 데이터 (임의 생성, 실제 시세 아님) ---------- */
   function sampleData(n, cfg) {
@@ -613,16 +634,17 @@
     }
 
     // 히어로
-    document.getElementById("px").textContent = fmt(A.price);
+    document.getElementById("px").textContent = fmtPx(A.price);
+    document.getElementById("px-unit").textContent = unitLabel();
     const up = A.chg > 0, dn = A.chg < 0;
     const pill = document.getElementById("chg");
     pill.className = "chg-pill " + (up ? "up" : dn ? "down" : "flat");
     pill.querySelector(".arrow").textContent = up ? "▲" : dn ? "▼" : "―";
-    document.getElementById("chg-abs").textContent = fmt(Math.abs(A.chg));
+    document.getElementById("chg-abs").textContent = fmtPx(Math.abs(A.chg));
     document.getElementById("chg-pct").textContent = `(${A.chgPct >= 0 ? "+" : "−"}${Math.abs(A.chgPct).toFixed(2)}%)`;
-    document.getElementById("hi").textContent = fmt(A.hi);
-    document.getElementById("lo").textContent = fmt(A.lo);
-    document.getElementById("vol").textContent = A.sigma ? fmt(A.sigma) + "원" : "–";
+    document.getElementById("hi").textContent = fmtPx(A.hi);
+    document.getElementById("lo").textContent = fmtPx(A.lo);
+    document.getElementById("vol").textContent = A.sigma ? fmtPx(A.sigma) + (curCurrency === "USD" ? " " + unitLabel() : "원") : "–";
 
     // 종합 신호
     document.getElementById("v-tag").textContent = A.tag;
@@ -920,10 +942,10 @@
   }
   function buildPriceTip(A, idx, meta) {
     let html = `<div class="tdate">${dateLabel(A, idx)}</div>`;
-    html += trow(cssv("--ink"), "종가", fmt(A.closes[idx]) + "원");
-    if (A.ma5[idx] != null) html += trow(cssv("--ma5"), "MA5", fmt(A.ma5[idx]));
-    if (A.ma20[idx] != null) html += trow(cssv("--ma20"), "MA20", fmt(A.ma20[idx]));
-    if (A.ma60[idx] != null) html += trow(cssv("--ma60"), "MA60", fmt(A.ma60[idx]));
+    html += trow(cssv("--ink"), "종가", fmtPx(A.closes[idx]) + (curCurrency === "USD" ? " " + unitLabel() : "원"));
+    if (A.ma5[idx] != null) html += trow(cssv("--ma5"), "MA5", fmtPx(A.ma5[idx]));
+    if (A.ma20[idx] != null) html += trow(cssv("--ma20"), "MA20", fmtPx(A.ma20[idx]));
+    if (A.ma60[idx] != null) html += trow(cssv("--ma60"), "MA60", fmtPx(A.ma60[idx]));
     return { html, my: meta.y(A.closes[idx]) };
   }
   function buildRsiTip(A, idx, meta) {
@@ -945,10 +967,11 @@
     if (!STOCKS[key]) key = "hynix";
     curStock = key;
     const cfg = STOCKS[key];
+    curCurrency = cfg.currency || "KRW";
     document.querySelectorAll("#stock-seg button").forEach(b =>
       b.setAttribute("aria-pressed", String(b.dataset.stock === key)));
     document.getElementById("tk-name").textContent = cfg.name;
-    document.getElementById("tk-code").textContent = "KRX " + cfg.code;
+    document.getElementById("tk-code").textContent = (cfg.exch || "KRX") + " " + cfg.code;
     document.title = cfg.name + " 기술적 분석";
     hoverIdx = null;
     const [live, news] = await Promise.all([loadLive(cfg.dir), loadNews(cfg.dir)]);
