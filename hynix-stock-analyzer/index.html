@@ -180,6 +180,31 @@
   .chip .cstate { font-size: .74rem; font-weight: 700; }
   .st-up { color: var(--up); } .st-down { color: var(--down); } .st-flat { color: var(--flat); } .st-warn { color: var(--warn); }
 
+  /* ---- AI News ---- */
+  .news .news-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .news .news-title { font-size: .74rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 700; display: inline-flex; align-items: center; gap: 7px; }
+  .news .news-meta { font-size: .68rem; color: var(--muted); font-weight: 600; }
+  .news .senti { display: inline-flex; align-items: center; gap: 7px; margin-bottom: 8px; }
+  .news .senti-pill { font-size: .95rem; font-weight: 780; padding: 4px 12px; border-radius: 10px; }
+  .senti-긍정, .s-pos { color: var(--up); background: var(--up-soft); }
+  .senti-부정, .s-neg { color: var(--down); background: var(--down-soft); }
+  .senti-중립, .s-neu { color: var(--flat); background: var(--surface-2); }
+  .news .news-summary { font-size: .98rem; font-weight: 650; line-height: 1.55; margin: 4px 0 12px; }
+  .news .kp { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+  .news .kp li { position: relative; padding-left: 16px; font-size: .9rem; color: var(--ink-2); line-height: 1.5; }
+  .news .kp li::before { content: ""; position: absolute; left: 2px; top: .5em; width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
+  .news .hl-title { font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin: 0 0 8px; }
+  .news .hls { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .news .hls li { display: flex; gap: 9px; padding: 8px 0; border-top: 1px solid var(--border); }
+  .news .hls li:first-child { border-top: none; }
+  .news .hdot { flex: none; width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; }
+  .news .hdot.s-pos { background: var(--up); } .news .hdot.s-neg { background: var(--down); } .news .hdot.s-neu { background: var(--flat); }
+  .news .hbody { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .news .hbody a { color: var(--ink); font-size: .9rem; font-weight: 600; line-height: 1.4; text-decoration: none; }
+  .news .hbody a:hover { text-decoration: underline; }
+  .news .hsrc { font-size: .7rem; color: var(--muted); font-weight: 600; }
+  .news .news-disc { font-size: .72rem; color: var(--muted); line-height: 1.5; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+
   /* ---- Charts ---- */
   .chart-card { padding: 16px 12px 12px; }
   .chart-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 6px; margin-bottom: 8px; }
@@ -295,6 +320,9 @@
 
   <!-- INDICATOR CHIPS -->
   <section class="chips" id="chips"></section>
+
+  <!-- AI NEWS ANALYSIS -->
+  <section class="card news" id="news-card" hidden></section>
 
   <!-- PRICE CHART -->
   <section class="card chart-card">
@@ -446,6 +474,55 @@
     else if (unix) d = new Date(unix * 1000);
     if (!d || isNaN(d)) return "";
     return d.toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul", hour12: false });
+  }
+
+  /* ---------- AI 뉴스 분석 로드 & 렌더 ---------- */
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const sentiClass = s => s === "긍정" ? "s-pos" : s === "부정" ? "s-neg" : "s-neu";
+
+  async function loadNews() {
+    try {
+      const res = await fetch("./news.json", { cache: "no-store" });
+      if (!res.ok) return null;
+      const j = await res.json();
+      if (!j.analysis || !j.analysis.sentiment) return null;
+      return j;
+    } catch (e) { return null; }
+  }
+
+  function renderNews(news) {
+    const card = document.getElementById("news-card");
+    if (!news) { card.hidden = true; return; }
+    const a = news.analysis;
+    const upd = fmtUpdated(news.updated, null);
+    const hlSenti = {};
+    (a.headlines || []).forEach(h => { hlSenti[h.index] = h.sentiment; });
+
+    const points = (a.key_points || []).map(p => `<li>${esc(p)}</li>`).join("");
+    const items = (news.headlines || []).map((h, i) => {
+      const s = hlSenti[i + 1] || "중립";
+      const dateStr = h.date ? new Date(h.date).toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit", timeZone: "Asia/Seoul" }) : "";
+      const meta = [esc(h.source), dateStr].filter(Boolean).join(" · ");
+      const title = h.link
+        ? `<a href="${esc(h.link)}" target="_blank" rel="noopener noreferrer">${esc(h.title)}</a>`
+        : `<span>${esc(h.title)}</span>`;
+      return `<li><span class="hdot ${sentiClass(s)}"></span><span class="hbody">${title}${meta ? `<span class="hsrc">${meta}</span>` : ""}</span></li>`;
+    }).join("");
+
+    card.innerHTML =
+      `<div class="news-head">
+         <span class="news-title">🤖 AI 뉴스 분석</span>
+         <span class="news-meta">Claude${news.model ? " · " + esc(news.model) : ""}${upd ? " · " + upd + " 갱신" : ""}</span>
+       </div>
+       <div class="senti">
+         <span class="senti-pill ${sentiClass(a.sentiment)}">${esc(a.sentiment)}</span>
+         <span class="news-meta">뉴스 종합 심리</span>
+       </div>
+       <p class="news-summary">${esc(a.summary)}</p>
+       ${points ? `<ul class="kp">${points}</ul>` : ""}
+       ${items ? `<p class="hl-title">주요 헤드라인</p><ul class="hls">${items}</ul>` : ""}
+       <p class="news-disc">Claude가 공개 뉴스 헤드라인을 요약·분석한 결과이며, 투자 자문이나 매매 권유가 아닙니다. 원문 링크로 사실관계를 직접 확인하세요.</p>`;
+    card.hidden = false;
   }
 
   /* ---------- 메인 계산 & 렌더 ---------- */
@@ -847,16 +924,18 @@
   document.getElementById("refresh").onclick = async () => {
     const btn = document.getElementById("refresh");
     btn.disabled = true;
-    const live = await loadLive();
+    const [live, news] = await Promise.all([loadLive(), loadNews()]);
     btn.disabled = false;
     if (live) { hoverIdx = null; render(analyze(live.closes, { source: "live", dates: live.dates, updated: live.updated, marketTime: live.marketTime, name: live.name, symbol: live.symbol })); }
+    renderNews(news);
   };
 
-  // 초기 로드: 실시간 데이터(same-origin data.json) 우선, 없으면 예시 데이터로 폴백
+  // 초기 로드: 실시간 시세 + AI 뉴스 분석(same-origin) 우선, 없으면 예시 데이터로 폴백
   (async function init() {
-    const live = await loadLive();
+    const [live, news] = await Promise.all([loadLive(), loadNews()]);
     if (live) render(analyze(live.closes, { source: "live", dates: live.dates, updated: live.updated, marketTime: live.marketTime, name: live.name, symbol: live.symbol }));
     else render(analyze(sampleData(260), { source: "sample" }));
+    renderNews(news);
     // 테마 토글 시 색상 재적용
     const mo = new MutationObserver(() => { if (currentA) render(currentA); });
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
