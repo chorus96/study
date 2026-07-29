@@ -357,6 +357,9 @@
   <!-- PER CHART (재무지표) -->
   <section class="card chart-card" id="per-card" hidden></section>
 
+  <!-- 영업이익 CHART (재무지표) -->
+  <section class="card chart-card" id="opinc-card" hidden></section>
+
 </div>
 
 <script>
@@ -637,6 +640,84 @@
       t.textContent = dates[i];
       svg.appendChild(t);
     });
+  }
+
+  /* ---------- 영업이익(연간) 로드 & 렌더 ---------- */
+  let curFin = null;
+  async function loadFinancials(dir) {
+    try {
+      const res = await fetch(`./${dir}/financials.json`, { cache: "no-store" });
+      if (!res.ok) return null;
+      const j = await res.json();
+      if (!j.operatingIncome || !j.operatingIncome.points || !j.operatingIncome.points.length) return null;
+      return j;
+    } catch (e) { return null; }
+  }
+
+  // 금액 축약: 원화(조/억), 달러(B/M)
+  function fmtAmt(v, unit) {
+    const a = Math.abs(v), sign = v < 0 ? "−" : "";
+    if (unit === "USD") {
+      if (a >= 1e9) return sign + (a / 1e9).toFixed(a >= 1e10 ? 0 : 1) + "B";
+      if (a >= 1e6) return sign + Math.round(a / 1e6).toLocaleString("en-US") + "M";
+      return sign + Math.round(a).toLocaleString("en-US");
+    }
+    if (a >= 1e12) return sign + (a / 1e12).toFixed(1) + "조";
+    if (a >= 1e8) return sign + Math.round(a / 1e8).toLocaleString("ko-KR") + "억";
+    return sign + Math.round(a).toLocaleString("ko-KR");
+  }
+
+  function renderFinancials(f) {
+    curFin = f;
+    const card = document.getElementById("opinc-card");
+    if (!f || !f.operatingIncome || !f.operatingIncome.points || !f.operatingIncome.points.length) {
+      card.hidden = true;
+      return;
+    }
+    const oi = f.operatingIncome, upd = fmtUpdated(f.updated, null);
+    const last = oi.points[oi.points.length - 1];
+    card.innerHTML =
+      `<div class="chart-head">
+         <h3>영업이익 (연간)</h3>
+         <span class="seg-lbl">${esc(last.period)}년 ${fmtAmt(last.value, oi.unit)}${upd ? " · " + upd : ""}</span>
+       </div>
+       <div class="chart-box"><svg id="chart-opinc" viewBox="0 0 340 150" preserveAspectRatio="none" role="img" aria-label="영업이익 차트"></svg></div>`;
+    card.hidden = false;
+    drawBars(f);
+  }
+
+  function drawBars(f) {
+    const svg = document.getElementById("chart-opinc");
+    if (!svg) return;
+    const W = 340, H = 150, P = { l: 4, r: 44, t: 12, b: 20 };
+    svg.innerHTML = "";
+    const pts = f.operatingIncome.points, unit = f.operatingIncome.unit, n = pts.length;
+    const vals = pts.map(p => p.value);
+    let mx = Math.max(...vals, 0), mn = Math.min(...vals, 0);
+    const span = (mx - mn) || 1;
+    const y = v => P.t + (1 - (v - mn) / span) * (H - P.t - P.b);
+    const y0 = y(0);
+    // y축 눈금(3개)
+    niceTicks(mn, mx, 3).forEach(v => {
+      svg.appendChild(el("line", { class: "gridline", x1: P.l, x2: W - P.r, y1: y(v), y2: y(v) }));
+      const t = el("text", { class: "axis-txt", x: W - P.r + 4, y: y(v) + 3 });
+      t.textContent = fmtAmt(v, unit);
+      svg.appendChild(t);
+    });
+    const bw = (W - P.l - P.r) / n * 0.62;
+    pts.forEach((p, i) => {
+      const cx = P.l + (n <= 1 ? 0.5 : (i + 0.5) / n) * (W - P.l - P.r);
+      const yv = y(p.value);
+      const top = Math.min(yv, y0), h = Math.max(1, Math.abs(yv - y0));
+      const up = p.value >= 0;
+      svg.appendChild(el("rect", { x: cx - bw / 2, y: top, width: bw, height: h, rx: 2,
+        fill: up ? cssv("--up") : cssv("--down"), opacity: .85 }));
+      const lbl = el("text", { class: "axis-txt", x: cx, y: H - 6, "text-anchor": "middle" });
+      lbl.textContent = p.period;
+      svg.appendChild(lbl);
+    });
+    // 0선
+    svg.appendChild(el("line", { x1: P.l, x2: W - P.r, y1: y0, y2: y0, stroke: cssv("--border-strong"), "stroke-width": 1 }));
   }
 
   /* ---------- 메인 계산 & 렌더 ---------- */
@@ -1047,11 +1128,12 @@
     document.getElementById("tk-code").textContent = (cfg.exch || "KRX") + " " + cfg.code;
     document.title = cfg.name + " 기술적 분석";
     hoverIdx = null;
-    const [live, news, fund] = await Promise.all([loadLive(cfg.dir), loadNews(cfg.dir), loadFundamentals(cfg.dir)]);
+    const [live, news, fund, fin] = await Promise.all([loadLive(cfg.dir), loadNews(cfg.dir), loadFundamentals(cfg.dir), loadFinancials(cfg.dir)]);
     if (live) render(analyze(live.closes, { source: "live", dates: live.dates, updated: live.updated, marketTime: live.marketTime, name: live.name || cfg.name, symbol: live.symbol || cfg.symbol }));
     else render(analyze(sampleData(260, cfg.sample), { source: "sample", name: cfg.name, symbol: cfg.symbol }));
     renderNews(news);
     renderFundamentals(fund);
+    renderFinancials(fin);
   }
 
   /* ---------- 이벤트 ---------- */
@@ -1069,7 +1151,7 @@
   (async function init() {
     await selectStock(curStock);
     // 테마 토글 시 색상 재적용
-    const mo = new MutationObserver(() => { if (currentA) render(currentA); if (curFund) drawPer(curFund); });
+    const mo = new MutationObserver(() => { if (currentA) render(currentA); if (curFund) drawPer(curFund); if (curFin) drawBars(curFin); });
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   })();
 })();
