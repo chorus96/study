@@ -633,7 +633,7 @@
     });
   }
 
-  /* ---------- 영업이익(연간) 로드 & 렌더 ---------- */
+  /* ---------- 영업이익(분기) 로드 & 렌더 ---------- */
   let curFin = null;
   async function loadFinancials(dir) {
     try {
@@ -658,6 +658,12 @@
     return sign + Math.round(a).toLocaleString("ko-KR");
   }
 
+  // "2025Q2" → {y:"2025", q:2}. 분기 라벨 파싱(형식이 다르면 null).
+  function qParts(period) {
+    const m = /^(\d{4})Q([1-4])$/.exec(period || "");
+    return m ? { y: m[1], q: +m[2] } : null;
+  }
+
   function renderFinancials(f) {
     curFin = f;
     const card = document.getElementById("opinc-card");
@@ -667,10 +673,12 @@
     }
     const oi = f.operatingIncome, upd = fmtUpdated(f.updated, null);
     const last = oi.points[oi.points.length - 1];
+    const lq = qParts(last.period);
+    const lastLbl = lq ? `${lq.y}년 ${lq.q}분기` : esc(last.period) + "년";
     card.innerHTML =
       `<div class="chart-head">
-         <h3>영업이익 (연간)</h3>
-         <span class="seg-lbl">${esc(last.period)}년 ${fmtAmt(last.value, oi.unit)}${upd ? " · " + upd : ""}</span>
+         <h3>영업이익 (분기)</h3>
+         <span class="seg-lbl">${lastLbl} ${fmtAmt(last.value, oi.unit)}${upd ? " · " + upd : ""}</span>
        </div>
        <div class="chart-box"><svg id="chart-opinc" viewBox="0 0 340 150" preserveAspectRatio="none" role="img" aria-label="영업이익 차트"></svg></div>`;
     card.hidden = false;
@@ -696,6 +704,7 @@
       svg.appendChild(t);
     });
     const bw = (W - P.l - P.r) / n * 0.62;
+    let prevY = null;
     pts.forEach((p, i) => {
       const cx = P.l + (n <= 1 ? 0.5 : (i + 0.5) / n) * (W - P.l - P.r);
       const yv = y(p.value);
@@ -703,8 +712,12 @@
       const up = p.value >= 0;
       svg.appendChild(el("rect", { x: cx - bw / 2, y: top, width: bw, height: h, rx: 2,
         fill: up ? cssv("--up") : cssv("--down"), opacity: .85 }));
+      // 분기 라벨: 해가 바뀔 때만 연도(''YY)를 앞에 붙여 혼잡을 줄인다. 예: '25 2Q → 3Q → 4Q
+      const qp = qParts(p.period);
+      let txt = p.period;
+      if (qp) { txt = (qp.y !== prevY ? "'" + qp.y.slice(2) + " " : "") + qp.q + "Q"; prevY = qp.y; }
       const lbl = el("text", { class: "axis-txt", x: cx, y: H - 6, "text-anchor": "middle" });
-      lbl.textContent = p.period;
+      lbl.textContent = txt;
       svg.appendChild(lbl);
     });
     // 0선
