@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 종목 손익지표(영업이익, 분기)를 받아 same-origin financials.json 으로 저장한다.
 #  - 국내(KRX): DART(전자공시) 무료 오픈API. DART_API_KEY + CORP_CODE 필요.
-#               분기보고서는 '누적' 값이므로 직전 누적을 빼서 분기별 이산값을 만든다.
+#               분기·반기보고서는 '당기 3개월' 실적, 사업보고서만 '연간 누적'이라
+#               Q1·Q2·Q3는 그대로 쓰고 Q4 = 연간 − (Q1+Q2+Q3)로 계산한다.
 #  - 미국(US) : FMP(period=quarter) → Alpha Vantage(quarterlyReports) 폴백.
 # 키가 없거나 수집에 실패하면 조용히 건너뛴다(파일 미생성 → 앱이 카드 숨김).
 # 배포를 막지 않도록 항상 exit 0.
@@ -39,7 +40,7 @@ if [ "$MARKET" = "krx" ]; then
   python3 - "$OUT" "$NAME" "$UPDATED" "$CURRENCY" "$work" <<'PY' || { echo "  · DART 분기 영업이익 파싱 실패" >&2; exit 0; }
 import sys, json, glob, os
 out, name, updated, currency, workdir = sys.argv[1:6]
-# reprt_code → 회계연도 시작부터의 '누적 분기수'
+# reprt_code → 분기 인덱스(1·2·3분기는 3개월 실적, 4=사업보고서 연간 누적)
 RC_K = {"11013": 1, "11012": 2, "11014": 3, "11011": 4}
 
 def op_income(j):
@@ -57,7 +58,7 @@ def op_income(j):
             return None
     return None
 
-# cum[year][k] = 회계연도 시작~해당분기 누적 영업이익
+# vals[year][k] = k분기 영업이익 (k=1·2·3은 3개월 실적, k=4는 연간 누적)
 cum = {}
 for path in sorted(glob.glob(os.path.join(workdir, "*.json"))):
     base = os.path.basename(path)[:-5]  # "YYYY_RC"
@@ -78,18 +79,18 @@ for path in sorted(glob.glob(os.path.join(workdir, "*.json"))):
     if v is not None:
         cum.setdefault(y, {})[k] = v
 
-# 누적 → 분기별 이산값: Qk = 누적k − 누적(k−1)  (Q1은 누적0=0)
+# Q1·Q2·Q3는 분기 보고서의 3개월 실적 그대로, Q4 = 연간 − (Q1+Q2+Q3).
 pts = []
 for y in sorted(cum):
     c = cum[y]
-    sys.stderr.write("  [분기누적] %s %s\n" % (y, {"Q%d" % k: c[k] for k in sorted(c)}))
-    for k in (1, 2, 3, 4):
-        if k not in c:
-            continue
-        prev = 0 if k == 1 else c.get(k - 1)
-        if prev is None:      # 직전 누적이 없으면 이산값 계산 불가 → 건너뜀
-            continue
-        pts.append({"period": "%sQ%d" % (y, k), "value": c[k] - prev})
+    sys.stderr.write("  [분기값] %s %s\n" % (y, {"Q%d" % k: c[k] for k in sorted(c)}))
+    q1, q2, q3, ann = c.get(1), c.get(2), c.get(3), c.get(4)
+    for k, v in ((1, q1), (2, q2), (3, q3)):
+        if v is not None:
+            pts.append({"period": "%sQ%d" % (y, k), "value": v})
+    # 연간이 있고 1~3분기가 모두 있으면 Q4를 역산(둘 중 하나라도 없으면 Q4 생략)
+    if ann is not None and None not in (q1, q2, q3):
+        pts.append({"period": "%sQ4" % y, "value": ann - (q1 + q2 + q3)})
 
 if len(pts) < 2:
     sys.exit("분기 영업이익 데이터 부족")
@@ -126,14 +127,15 @@ if kind == "fmp":
     if not isinstance(raw, list) or not raw:
         sys.exit("FMP 데이터 없음")
     for it in raw:
-        per = (it.get("period") or "").upper()        # "Q1".."Q4"
+        # 달력 기준으로 통일: 보고일(date)의 연·월로 연도·분기를 정한다.
+        # (FMP calendarYear는 회계연도라 엔비디아처럼 결산이 앞선 종목은 어긋남)
         date = it.get("date") or ""
-        year = str(it.get("calendarYear") or it.get("fiscalYear") or date[:4] or "")
-        q = None
-        if per.startswith("Q") and per[1:].isdigit():
-            q = int(per[1:])
-        elif len(date) >= 7:
-            q = (int(date[5:7]) - 1) // 3 + 1
+        if len(date) >= 7:
+            year, q = date[:4], (int(date[5:7]) - 1) // 3 + 1
+        else:
+            per = (it.get("period") or "").upper()
+            year = str(it.get("calendarYear") or it.get("fiscalYear") or "")
+            q = int(per[1:]) if (per.startswith("Q") and per[1:].isdigit()) else None
         add(year, q, it.get("operatingIncome"))
 else:  # Alpha Vantage
     reports = raw.get("quarterlyReports") if isinstance(raw, dict) else None
