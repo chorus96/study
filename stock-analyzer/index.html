@@ -341,6 +341,20 @@
     <div class="chart-box"><div id="tip-price" class="tip"></div><svg id="chart-price" viewBox="0 0 340 210" preserveAspectRatio="none" role="img" aria-label="가격 및 이동평균 차트"></svg></div>
   </section>
 
+  <!-- WEEKLY PRICE CHART -->
+  <section class="card chart-card" id="weekly-card" hidden>
+    <div class="chart-head"><h3>주봉 · 가격 · 이동평균 · 볼린저밴드</h3></div>
+    <div class="legend" id="weekly-legend"></div>
+    <div class="chart-box"><div id="tip-weekly" class="tip"></div><svg id="chart-weekly" viewBox="0 0 340 210" preserveAspectRatio="none" role="img" aria-label="주봉 가격 차트"></svg></div>
+  </section>
+
+  <!-- MONTHLY PRICE CHART -->
+  <section class="card chart-card" id="monthly-card" hidden>
+    <div class="chart-head"><h3>월봉 · 가격 · 이동평균 · 볼린저밴드</h3></div>
+    <div class="legend" id="monthly-legend"></div>
+    <div class="chart-box"><div id="tip-monthly" class="tip"></div><svg id="chart-monthly" viewBox="0 0 340 210" preserveAspectRatio="none" role="img" aria-label="월봉 가격 차트"></svg></div>
+  </section>
+
   <!-- RSI CHART -->
   <section class="card chart-card">
     <div class="chart-head"><h3>RSI (14)</h3><span class="seg-lbl">과매수 70 · 과매도 30</span></div>
@@ -504,13 +518,15 @@
       if (!res.ok) return null;
       const j = await res.json();
       const pts = j.points || [];
-      const closes = pts.map(p => p.c).filter(v => isFinite(v) && v > 0);
+      // 주봉·월봉 리샘플링용 유효 포인트(타임스탬프 포함)
+      const vpts = pts.filter(p => p && isFinite(p.c) && p.c > 0 && isFinite(p.t));
+      const closes = vpts.map(p => p.c);
       if (closes.length < 5) return null;
-      const dates = pts.map(p => {
+      const dates = vpts.map(p => {
         const d = new Date(p.t * 1000);
         return d.toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit", timeZone: "Asia/Seoul" });
       });
-      return { closes, dates, updated: j.updated || null, marketTime: j.marketTime || null,
+      return { closes, dates, pts: vpts, updated: j.updated || null, marketTime: j.marketTime || null,
         name: j.name || null, symbol: j.symbol || null };
     } catch (e) { return null; }
   }
@@ -1120,6 +1136,179 @@
     return { html, my: meta.y(A.macd.line[idx]) };
   }
 
+  /* ---------- 주봉·월봉 (가격·이동평균·볼린저밴드) ---------- */
+  // 타임프레임 설정: 주봉은 주간 MA5/20/60, 월봉은 월간 MA6/12/24, 둘 다 볼린저(20,2).
+  const TF = {
+    week:  { key: "week",  card: "weekly-card",  svg: "chart-weekly",  legend: "weekly-legend",  tip: "tip-weekly",  unit: "week",  ma: [5, 20, 60], bbP: 20, minPts: 8 },
+    month: { key: "month", card: "monthly-card", svg: "chart-monthly", legend: "monthly-legend", tip: "tip-monthly", unit: "month", ma: [6, 12, 24], bbP: 20, minPts: 6 },
+  };
+  const tfState = { week: { ma: [true, true, true], bb: true }, month: { ma: [true, true, true], bb: true } };
+  const tfData = {};   // key → {closes, ma[], bb, dates, n} (토글·테마 재그리기에 사용)
+
+  // 일봉 {t,c}[] 를 주간/월간 종가로 리샘플(각 구간의 마지막 종가). 시간순 유지.
+  function resample(pts, unit) {
+    const buckets = new Map();
+    for (const p of pts) {
+      if (!p || !isFinite(p.c) || p.c <= 0 || !isFinite(p.t)) continue;
+      let key;
+      if (unit === "week") key = Math.floor(p.t / 604800);                 // 7일(=604800초) 구간
+      else { const d = new Date(p.t * 1000); key = d.getUTCFullYear() * 12 + d.getUTCMonth(); }
+      buckets.set(key, p);   // 같은 구간이면 뒤(최근) 종가가 대표값
+    }
+    return [...buckets.values()];   // Map은 최초 등장 순서 유지 → 시간순
+  }
+  function tfDateLabel(t, unit) {
+    const d = new Date(t * 1000);
+    if (unit === "month") return d.toLocaleDateString("ko-KR", { year: "2-digit", month: "2-digit", timeZone: "Asia/Seoul" });
+    return d.toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit", timeZone: "Asia/Seoul" });
+  }
+
+  function renderTFCharts(src) {
+    const pts = (src && src.pts) || [];
+    drawTF(TF.week, pts);
+    drawTF(TF.month, pts);
+  }
+  function drawTF(cfg, pts) {
+    const card = document.getElementById(cfg.card);
+    const rs = resample(pts, cfg.unit);
+    const closes = rs.map(p => p.c);
+    if (closes.length < cfg.minPts) { if (card) card.hidden = true; tfData[cfg.key] = null; return; }
+    tfData[cfg.key] = {
+      closes,
+      ma: cfg.ma.map(p => sma(closes, p)),
+      bb: bollinger(closes, cfg.bbP, 2),
+      dates: rs.map(p => tfDateLabel(p.t, cfg.unit)),
+      n: closes.length,
+    };
+    if (card) card.hidden = false;
+    buildTFLegend(cfg);
+    drawTFChart(cfg);
+  }
+
+  function buildTFLegend(cfg) {
+    const wrap = document.getElementById(cfg.legend);
+    if (!wrap) return;
+    const st = tfState[cfg.key];
+    const maColors = [cssv("--ma5"), cssv("--ma20"), cssv("--ma60")];
+    const items = [{ fixed: true, label: "종가", color: cssv("--ink"), dash: false }];
+    cfg.ma.forEach((p, i) => items.push({ idx: i, label: "MA" + p, color: maColors[i], dash: false }));
+    items.push({ bb: true, label: "볼린저밴드", color: cssv("--ma20"), dash: true });
+    wrap.innerHTML = "";
+    items.forEach(it => {
+      const b = document.createElement("button");
+      b.className = "lg"; b.type = "button";
+      const pressed = it.fixed ? true : it.bb ? st.bb : st.ma[it.idx];
+      b.setAttribute("aria-pressed", String(pressed));
+      b.innerHTML = `<span class="sw ${it.dash ? "dash" : ""}" style="background:${it.dash ? "" : it.color};color:${it.color}"></span>${it.label}`;
+      if (!it.fixed) b.onclick = () => {
+        if (it.bb) st.bb = !st.bb; else st.ma[it.idx] = !st.ma[it.idx];
+        b.setAttribute("aria-pressed", String(it.bb ? st.bb : st.ma[it.idx]));
+        drawTFChart(cfg);
+      };
+      wrap.appendChild(b);
+    });
+  }
+
+  function drawTFChart(cfg) {
+    const svg = document.getElementById(cfg.svg);
+    const D = tfData[cfg.key];
+    if (!svg || !D) return;
+    const st = tfState[cfg.key];
+    const W = 340, H = 210; svg.innerHTML = "";
+    const n = D.closes.length;
+    const maColors = [cssv("--ma5"), cssv("--ma20"), cssv("--ma60")];
+    let vals = D.closes.slice();
+    const push = arr => { for (const v of arr) if (v != null) vals.push(v); };
+    D.ma.forEach((m, i) => { if (st.ma[i]) push(m); });
+    if (st.bb) { push(D.bb.up); push(D.bb.lo); }
+    let mn = Math.min(...vals), mx = Math.max(...vals);
+    const pad = (mx - mn) * 0.06 || 1; mn -= pad; mx += pad;
+    const y = v => PAD.t + (1 - (v - mn) / (mx - mn)) * (H - PAD.t - PAD.b);
+    const x = i => xScale(i, n, W);
+
+    niceTicks(mn, mx, 4).forEach(v => {
+      svg.appendChild(el("line", { class: "gridline", x1: PAD.l, x2: W - PAD.r, y1: y(v), y2: y(v) }));
+      const t = el("text", { class: "axis-txt", x: W - PAD.r + 4, y: y(v) + 3 }); t.textContent = fmt(v);
+      svg.appendChild(t);
+    });
+    // 볼린저밴드
+    if (st.bb) {
+      let d = "", started = false;
+      for (let i = 0; i < n; i++) { if (D.bb.up[i] == null) continue; d += (started ? "L" : "M") + x(i).toFixed(1) + " " + y(D.bb.up[i]).toFixed(1) + " "; started = true; }
+      for (let i = n - 1; i >= 0; i--) { if (D.bb.lo[i] == null) continue; d += "L" + x(i).toFixed(1) + " " + y(D.bb.lo[i]).toFixed(1) + " "; }
+      if (d) { d += "Z"; svg.appendChild(el("path", { d, fill: cssv("--band"), stroke: "none" })); }
+      svg.appendChild(el("path", { d: path(D.bb.up.map((v, i) => [x(i), v == null ? null : y(v)])), fill: "none", stroke: cssv("--ma20"), "stroke-width": 1, "stroke-dasharray": "3 3", opacity: .55 }));
+      svg.appendChild(el("path", { d: path(D.bb.lo.map((v, i) => [x(i), v == null ? null : y(v)])), fill: "none", stroke: cssv("--ma20"), "stroke-width": 1, "stroke-dasharray": "3 3", opacity: .55 }));
+    }
+    // 종가 영역 + 선
+    const areaTop = D.closes.map((v, i) => [x(i), y(v)]);
+    const ad = path(areaTop) + ` L ${x(n - 1).toFixed(1)} ${(H - PAD.b).toFixed(1)} L ${x(0).toFixed(1)} ${(H - PAD.b).toFixed(1)} Z`;
+    const gid = "pg-" + cfg.key;
+    const grad = el("linearGradient", { id: gid, x1: 0, y1: 0, x2: 0, y2: 1 });
+    grad.appendChild(el("stop", { offset: "0%", "stop-color": cssv("--ink"), "stop-opacity": .12 }));
+    grad.appendChild(el("stop", { offset: "100%", "stop-color": cssv("--ink"), "stop-opacity": 0 }));
+    const defs = el("defs", {}); defs.appendChild(grad); svg.appendChild(defs);
+    svg.appendChild(el("path", { d: ad, fill: `url(#${gid})`, stroke: "none" }));
+    // 이동평균(장기→단기 순으로 그려 단기선이 위에)
+    for (let i = D.ma.length - 1; i >= 0; i--) {
+      if (st.ma[i]) svg.appendChild(el("path", { d: path(D.ma[i].map((v, k) => [x(k), v == null ? null : y(v)])), fill: "none", stroke: maColors[i], "stroke-width": 1.6, "stroke-linejoin": "round" }));
+    }
+    svg.appendChild(el("path", { d: path(areaTop), fill: "none", stroke: cssv("--ink"), "stroke-width": 2, "stroke-linejoin": "round" }));
+    svg.appendChild(el("circle", { cx: x(n - 1), cy: y(D.closes[n - 1]), r: 3.2, fill: cssv("--ink") }));
+    // x축 라벨 4개
+    if (D.dates && D.dates.length === n) {
+      const idxs = [0, Math.round((n - 1) / 3), Math.round((n - 1) * 2 / 3), n - 1];
+      idxs.forEach((i, k) => {
+        const anchor = k === 0 ? "start" : k === idxs.length - 1 ? "end" : "middle";
+        const t = el("text", { class: "axis-txt", x: Math.max(PAD.l, Math.min(W - PAD.r, x(i))), y: H - 4, "text-anchor": anchor });
+        t.textContent = D.dates[i]; svg.appendChild(t);
+      });
+    }
+    svg._meta = { x, y, n, W, H };
+    attachTFHover(svg, cfg, D);
+  }
+
+  // 자체 크로스헤어 호버(일봉 차트와 독립: 타임프레임마다 x축이 다름)
+  function attachTFHover(svg, cfg, D) {
+    const meta = svg._meta;
+    const ov = el("rect", { x: 0, y: 0, width: meta.W, height: meta.H, fill: "transparent", style: "cursor:crosshair" });
+    svg.appendChild(ov);
+    const cross = el("line", { x1: 0, x2: 0, y1: PAD.t, y2: meta.H - PAD.b, stroke: cssv("--border-strong"), "stroke-width": 1, "stroke-dasharray": "2 3", opacity: 0 });
+    svg.appendChild(cross);
+    const marker = el("circle", { r: 3.5, fill: "none", stroke: cssv("--ink"), "stroke-width": 1.5, opacity: 0 });
+    svg.appendChild(marker);
+    const tip = document.getElementById(cfg.tip);
+    const maColors = [cssv("--ma5"), cssv("--ma20"), cssv("--ma60")];
+    const toIdx = ev => {
+      const rect = svg.getBoundingClientRect();
+      const cx = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
+      const px = cx / rect.width * meta.W;
+      const frac = (px - PAD.l) / ((meta.W - PAD.l - PAD.r) || 1);
+      return Math.max(0, Math.min(meta.n - 1, Math.round(frac * (meta.n - 1))));
+    };
+    const show = ev => {
+      const idx = toIdx(ev), xx = meta.x(idx);
+      cross.setAttribute("x1", xx); cross.setAttribute("x2", xx); cross.setAttribute("opacity", .8);
+      marker.setAttribute("cx", xx); marker.setAttribute("cy", meta.y(D.closes[idx])); marker.setAttribute("opacity", 1);
+      let html = `<div class="tdate">${(D.dates[idx] || "")}${idx === D.n - 1 ? " · 최근" : ""}</div>`;
+      html += trow(cssv("--ink"), "종가", fmtPx(D.closes[idx]) + (curCurrency === "USD" ? " " + unitLabel() : "원"));
+      cfg.ma.forEach((p, i) => { if (D.ma[i][idx] != null) html += trow(maColors[i], "MA" + p, fmtPx(D.ma[i][idx])); });
+      if (tip) {
+        tip.innerHTML = html;
+        const rect = svg.getBoundingClientRect(), leftPx = (xx / meta.W) * rect.width;
+        tip.style.left = Math.max(66, Math.min(rect.width - 66, leftPx)) + "px";
+        tip.style.top = "6px"; tip.style.opacity = 1;
+      }
+      if (ev.cancelable && ev.touches) ev.preventDefault();
+    };
+    const hide = () => { cross.setAttribute("opacity", 0); marker.setAttribute("opacity", 0); if (tip) tip.style.opacity = 0; };
+    ov.addEventListener("mousemove", show);
+    ov.addEventListener("mouseleave", hide);
+    ov.addEventListener("touchstart", show, { passive: false });
+    ov.addEventListener("touchmove", show, { passive: false });
+    ov.addEventListener("touchend", hide);
+  }
+
   /* ---------- 종목 선택 (실시간 우선, 없으면 예시 폴백) ---------- */
   async function selectStock(key) {
     if (!STOCKS[key]) key = "hynix";
@@ -1136,8 +1325,16 @@
     // data.json은 최근 ~5년 일봉을 담는다. 일봉 차트는 최근 ~1년(260일)만 표시해
     // 가독성을 유지한다(확장된 과거 데이터는 향후 주봉·월봉 차트에서 활용).
     const DAILY_VIEW = 260;
-    if (live) render(analyze(live.closes.slice(-DAILY_VIEW), { source: "live", dates: live.dates.slice(-DAILY_VIEW), updated: live.updated, marketTime: live.marketTime, name: live.name || cfg.name, symbol: live.symbol || cfg.symbol }));
-    else render(analyze(sampleData(260, cfg.sample), { source: "sample", name: cfg.name, symbol: cfg.symbol }));
+    if (live) {
+      render(analyze(live.closes.slice(-DAILY_VIEW), { source: "live", dates: live.dates.slice(-DAILY_VIEW), updated: live.updated, marketTime: live.marketTime, name: live.name || cfg.name, symbol: live.symbol || cfg.symbol }));
+      renderTFCharts(live);
+    } else {
+      // 예시 모드도 실데이터처럼 ~5년치를 생성: 일봉은 최근 1년, 주봉·월봉은 전체 사용
+      const sAll = sampleData(1300, cfg.sample);
+      render(analyze(sAll.slice(-260), { source: "sample", name: cfg.name, symbol: cfg.symbol }));
+      const now = Math.floor(Date.now() / 1000);
+      renderTFCharts({ pts: sAll.map((c, i) => ({ t: now - (sAll.length - 1 - i) * 86400, c })) });
+    }
     renderNews(news);
     renderFundamentals(fund);
     renderFinancials(fin);
@@ -1158,7 +1355,7 @@
   (async function init() {
     await selectStock(curStock);
     // 테마 토글 시 색상 재적용
-    const mo = new MutationObserver(() => { if (currentA) render(currentA); if (curFund) drawPer(curFund); if (curFin) drawBars(curFin); });
+    const mo = new MutationObserver(() => { if (currentA) render(currentA); if (curFund) drawPer(curFund); if (curFin) drawBars(curFin); if (tfData.week) { buildTFLegend(TF.week); drawTFChart(TF.week); } if (tfData.month) { buildTFLegend(TF.month); drawTFChart(TF.month); } });
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   })();
 })();
