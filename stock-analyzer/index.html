@@ -728,7 +728,7 @@
   function drawBars(f) {
     const svg = document.getElementById("chart-opinc");
     if (!svg) return;
-    const W = 340, H = 150, P = { l: 4, r: 44, t: 12, b: 20 };
+    const W = 340, H = 150, P = { l: 4, r: 44, t: 12, b: 24 };
     svg.innerHTML = "";
     const pts = f.operatingIncome.points, unit = f.operatingIncome.unit, n = pts.length;
     const vals = pts.map(p => p.value);
@@ -743,27 +743,31 @@
       t.textContent = fmtAmt(v, unit);
       svg.appendChild(t);
     });
-    const bw = (W - P.l - P.r) / n * 0.62;
-    const dense = n > 12;   // 분기 수가 많으면(5년≈20분기) 연도 표시만
+    // 막대폭을 좁혀(0.42) 분기 막대가 촘촘히 보이게 한다.
+    const bw = Math.max(2, (W - P.l - P.r) / n * 0.42);
     let prevY = null;
     pts.forEach((p, i) => {
       const cx = P.l + (n <= 1 ? 0.5 : (i + 0.5) / n) * (W - P.l - P.r);
       const yv = y(p.value);
       const top = Math.min(yv, y0), h = Math.max(1, Math.abs(yv - y0));
       const up = p.value >= 0;
-      svg.appendChild(el("rect", { x: cx - bw / 2, y: top, width: bw, height: h, rx: 2,
+      svg.appendChild(el("rect", { x: cx - bw / 2, y: top, width: bw, height: h, rx: 1.5,
         fill: up ? cssv("--up") : cssv("--down"), opacity: .85 }));
-      // 라벨: 촘촘하면 해가 바뀔 때 연도(''YY)만, 아니면 분기까지 표시(예: '25 2Q → 3Q)
+      // 라벨: 모든 막대에 분기(1Q~4Q), 해가 바뀔 때만 아래줄에 연도(''YY)
       const qp = qParts(p.period);
-      let txt = p.period;
       if (qp) {
-        if (dense) { txt = qp.y !== prevY ? "'" + qp.y.slice(2) : ""; }
-        else { txt = (qp.y !== prevY ? "'" + qp.y.slice(2) + " " : "") + qp.q + "Q"; }
-        prevY = qp.y;
-      }
-      if (txt) {
+        const ql = el("text", { class: "axis-txt", x: cx, y: H - 14, "text-anchor": "middle" });
+        ql.textContent = qp.q + "Q";
+        svg.appendChild(ql);
+        if (qp.y !== prevY) {
+          const yl = el("text", { class: "axis-txt", x: cx, y: H - 4, "text-anchor": "middle" });
+          yl.textContent = "'" + qp.y.slice(2);
+          svg.appendChild(yl);
+          prevY = qp.y;
+        }
+      } else {
         const lbl = el("text", { class: "axis-txt", x: cx, y: H - 6, "text-anchor": "middle" });
-        lbl.textContent = txt;
+        lbl.textContent = p.period;
         svg.appendChild(lbl);
       }
     });
