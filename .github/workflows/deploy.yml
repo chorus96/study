@@ -71,7 +71,7 @@ jobs:
           SYMBOL: '000660.KS'
           NUMCODE: '000660'
           NAME: 'SK하이닉스'
-          RANGE: '1y'
+          RANGE: '5y'
           OUT: 'stock-analyzer/hynix/data.json'
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
@@ -83,7 +83,7 @@ jobs:
           SYMBOL: '005930.KS'
           NUMCODE: '005930'
           NAME: '삼성전자'
-          RANGE: '1y'
+          RANGE: '5y'
           OUT: 'stock-analyzer/samsung/data.json'
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
@@ -99,7 +99,7 @@ jobs:
           CURRENCY: 'USD'
           STOOQ_S: 'mu.us'
           SYMLABEL: 'MU'
-          RANGE: '1y'
+          RANGE: '5y'
           OUT: 'stock-analyzer/micron/data.json'
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
@@ -115,7 +115,7 @@ jobs:
           CURRENCY: 'USD'
           STOOQ_S: 'nvda.us'
           SYMLABEL: 'NVDA'
-          RANGE: '1y'
+          RANGE: '5y'
           OUT: 'stock-analyzer/nvidia/data.json'
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
