@@ -15,9 +15,13 @@ on:
       - 'scripts/fetch_financials.sh'
       - '.github/workflows/deploy.yml'
   schedule:
-    # KRX 정규장 09:00–15:30 KST = 00:00–06:30 UTC(평일). 30분 간격으로 갱신.
+    # 시세·뉴스: 평일 10분 간격, 24시간 — 국내 장중(오전)과 미국 야간장(밤)을 모두 커버.
+    - cron: '*/10 * * * 1-5'
+    # PER·영업이익(분기 데이터): 평일 4시간 간격(:05분)으로만 갱신.
+    #   FMP(250/일)·Alpha Vantage(25/일) 한도를 아끼고 DART 부하를 줄이기 위함.
+    #   10분 실행에서는 아래 재무 스텝을 건너뛰고 캐시에 담긴 직전 값을 그대로 배포한다.
     # (스케줄 워크플로는 기본 브랜치(main)에서만 동작합니다.)
-    - cron: '*/30 0-7 * * 1-5'
+    - cron: '5 */4 * * 1-5'
   workflow_dispatch: {}
 
 permissions:
@@ -37,21 +41,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 미국 종목(Yahoo 간헐적 429)의 마지막 성공 시세를 캐시에서 복원.
-      # 이번 수집이 실패해도 직전 실데이터가 남아 예시 폴백 대신 표시된다.
-      - name: Restore cached US price data
+      # 직전 성공 데이터를 캐시에서 복원한다.
+      #  - 미국 시세(Yahoo 간헐적 429) 대비 마지막 성공분
+      #  - PER·영업이익(분기 데이터): 4시간마다만 갱신하므로 10분 실행에서는
+      #    캐시에 담긴 직전 값을 복원해 그대로 배포한다(카드가 사라지지 않게).
+      - name: Restore cached market data
         uses: actions/cache/restore@v4
         with:
           path: |
             stock-analyzer/micron/data.json
             stock-analyzer/nvidia/data.json
-            stock-analyzer/micron/financials.json
-            stock-analyzer/nvidia/financials.json
+            stock-analyzer/hynix/fundamentals.json
+            stock-analyzer/samsung/fundamentals.json
             stock-analyzer/micron/fundamentals.json
             stock-analyzer/nvidia/fundamentals.json
-          key: us-price-${{ github.run_id }}
+            stock-analyzer/hynix/financials.json
+            stock-analyzer/samsung/financials.json
+            stock-analyzer/micron/financials.json
+            stock-analyzer/nvidia/financials.json
+          key: dash-cache-${{ github.run_id }}
           restore-keys: |
-            us-price-
+            dash-cache-
 
       # ── 시세: 종목별로 수집 (한 종목이 실패해도 배포는 진행) ──
       - name: Fetch SK Hynix price data
@@ -143,8 +153,11 @@ jobs:
           NEWS_QUERY: '엔비디아'
           NEWS_OUT: 'stock-analyzer/nvidia/news.json'
 
-      # ── 재무지표(PER 일별 추이): 국내 종목만 pykrx로 수집 (무키). ──
+      # ── 재무지표(PER·영업이익): 분기 데이터라 자주 바뀌지 않고 미국 API 한도가
+      #    빡빡하므로, 10분(시세) 실행에서는 건너뛰고 4시간 실행에서만 갱신한다.
+      #    아래 8개 스텝은 '*/10 * * * 1-5' 크론이 아닐 때만(=4시간 크론·push·수동) 실행. ──
       - name: Fetch SK Hynix fundamentals (PER via Naver EPS)
+        if: ${{ github.event.schedule != '*/10 * * * 1-5' }}
         continue-on-error: true
         run: bash scripts/fetch_fundamentals.sh
         env:
@@ -157,6 +170,7 @@ jobs:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
 
       - name: Fetch Samsung fundamentals (PER via Naver EPS)
+        if: ${{ github.event.schedule != '*/10 * * * 1-5' }}
         continue-on-error: true
         run: bash scripts/fetch_fundamentals.sh
         env:
@@ -169,6 +183,7 @@ jobs:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
 
       - name: Fetch Micron fundamentals (PER via EPS)
+        if: ${{ github.event.schedule != '*/10 * * * 1-5' }}
         continue-on-error: true
         run: bash scripts/fetch_fundamentals.sh
         env:
@@ -181,6 +196,7 @@ jobs:
           ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
 
       - name: Fetch NVIDIA fundamentals (PER via EPS)
+        if: ${{ github.event.schedule != '*/10 * * * 1-5' }}
         continue-on-error: true
         run: bash scripts/fetch_fundamentals.sh
         env:
@@ -192,8 +208,9 @@ jobs:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
           ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
 
-      # ── 영업이익(연간): 국내는 DART, 미국은 FMP 무료 키로 수집 ──
+      # ── 영업이익(분기): 국내는 DART, 미국은 FMP·Alpha Vantage. (4시간 실행에서만) ──
       - name: Fetch SK Hynix operating income (DART)
+        if: ${{ github.event.schedule != '*/10 * * * 1-5' }}
         continue-on-error: true
         run: bash scripts/fetch_financials.sh
         env:
@@ -205,6 +222,7 @@ jobs:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
 
       - name: Fetch Samsung operating income (DART)
+        if: ${{ github.event.schedule != '*/10 * * * 1-5' }}
         continue-on-error: true
         run: bash scripts/fetch_financials.sh
         env:
@@ -216,6 +234,7 @@ jobs:
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
 
       - name: Fetch Micron operating income (FMP → Alpha Vantage)
+        if: ${{ github.event.schedule != '*/10 * * * 1-5' }}
         continue-on-error: true
         run: bash scripts/fetch_financials.sh
         env:
@@ -228,6 +247,7 @@ jobs:
           ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
 
       - name: Fetch NVIDIA operating income (FMP → Alpha Vantage)
+        if: ${{ github.event.schedule != '*/10 * * * 1-5' }}
         continue-on-error: true
         run: bash scripts/fetch_financials.sh
         env:
@@ -239,19 +259,24 @@ jobs:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
           ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
 
-      # 이번 실행의 미국 시세(신규 성공분 또는 복원분)를 캐시에 저장 → 다음 실행에서 복원.
-      - name: Save US price data to cache
+      # 이번 실행의 데이터(신규 성공분 또는 복원분)를 캐시에 저장 → 다음 실행에서 복원.
+      # PER·영업이익은 4시간 실행에서 갱신되고, 그 사이 10분 실행들은 이 캐시로 유지된다.
+      - name: Save market data to cache
         if: always()
         uses: actions/cache/save@v4
         with:
           path: |
             stock-analyzer/micron/data.json
             stock-analyzer/nvidia/data.json
-            stock-analyzer/micron/financials.json
-            stock-analyzer/nvidia/financials.json
+            stock-analyzer/hynix/fundamentals.json
+            stock-analyzer/samsung/fundamentals.json
             stock-analyzer/micron/fundamentals.json
             stock-analyzer/nvidia/fundamentals.json
-          key: us-price-${{ github.run_id }}
+            stock-analyzer/hynix/financials.json
+            stock-analyzer/samsung/financials.json
+            stock-analyzer/micron/financials.json
+            stock-analyzer/nvidia/financials.json
+          key: dash-cache-${{ github.run_id }}
 
       - name: Configure Pages
         # 최초 1회만 Settings → Pages → Source를 "GitHub Actions"로 설정해야 함
