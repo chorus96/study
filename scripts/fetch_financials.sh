@@ -167,12 +167,21 @@ PY
   # FMP 무료(stable)는 분기 limit이 최대 5라 5분기까지만 → AV 실패 시 폴백.
   if [ -n "${ALPHAVANTAGE_API_KEY:-}" ]; then
     echo "영업이익(Alpha Vantage·분기) 시도: ${NAME} (${SYMBOL})"
-    code=$(curl -sS --max-time 30 -A "$UA" -w '%{http_code}' -o "$tmp" \
-      "https://www.alphavantage.co/query?function=INCOME_STATEMENT&symbol=${SYMBOL}&apikey=${ALPHAVANTAGE_API_KEY}" 2>/dev/null || echo 000)
-    echo "  · AV HTTP ${code}: $(head -c 140 "$tmp" 2>/dev/null | tr '\n' ' ')" >&2
-    if [ "$code" = "200" ] && python3 "$PARSE" "$OUT" "$NAME" "$UPDATED" "$CURRENCY" "$tmp" av; then
-      ok=1; echo "→ 성공: Alpha Vantage (${NAME})"
-    fi
+    # AV 무료는 초당 1회·분당 5회 제한이 있어, US 종목이 연달아 호출하면 뒤 종목이
+    # 레이트리밋('Information'/'Note' 응답)에 걸린다. 호출 전 간격을 두고, 걸리면
+    # 잠시 대기 후 한 번 재시도한다.
+    for av_try in 1 2; do
+      sleep "${AV_DELAY:-3}"
+      code=$(curl -sS --max-time 30 -A "$UA" -w '%{http_code}' -o "$tmp" \
+        "https://www.alphavantage.co/query?function=INCOME_STATEMENT&symbol=${SYMBOL}&apikey=${ALPHAVANTAGE_API_KEY}" 2>/dev/null || echo 000)
+      echo "  · AV HTTP ${code} (시도 ${av_try}): $(head -c 120 "$tmp" 2>/dev/null | tr '\n' ' ')" >&2
+      if [ "$code" = "200" ] && ! grep -qiE '"(Information|Note)"[[:space:]]*:' "$tmp"; then
+        if python3 "$PARSE" "$OUT" "$NAME" "$UPDATED" "$CURRENCY" "$tmp" av; then
+          ok=1; echo "→ 성공: Alpha Vantage (${NAME})"; break
+        fi
+      fi
+      [ "$av_try" -eq 1 ] && { echo "  · AV 레이트리밋/실패 → 대기 후 재시도" >&2; sleep 20; }
+    done
   fi
 
   if [ "$ok" -ne 1 ] && [ -n "${FMP_API_KEY:-}" ]; then
