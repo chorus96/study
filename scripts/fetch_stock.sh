@@ -3,6 +3,9 @@
 # 종목을 모두 지원한다. GitHub Actions 러너에서 실행되며 여러 소스를 순서대로
 # 시도하고, 각 시도의 HTTP 상태를 로그로 남긴다. (진단 가능하도록 -e 미사용)
 #
+# 최근 약 5년치 일봉을 수집한다(주봉·월봉 리샘플링에 충분한 기간 확보).
+# 일봉 화면은 프런트에서 최근 ~1년만 잘라 표시한다.
+#
 # 시장별 소스:
 #   krx: Yahoo → Stooq(.kr) → pykrx(KRX 공식, 무키) → TwelveData/FMP(선택)
 #   us : Yahoo → Stooq(.us, 무키) → TwelveData/FMP(선택)   ※ pykrx 제외
@@ -12,7 +15,9 @@ SYMBOL="${SYMBOL:-000660.KS}"          # Yahoo 형식(예: 000660.KS, NVDA)
 NUMCODE="${NUMCODE:-000660}"           # 코드/티커(예: 000660, NVDA)
 NAME="${NAME:-SK하이닉스}"
 OUT="${OUT:-stock-analyzer/hynix/data.json}"
-RANGE="${RANGE:-1y}"
+RANGE="${RANGE:-5y}"
+MAXPTS="${MAXPTS:-1300}"               # 저장할 최대 일봉 개수(≈5년)
+LOOKBACK_DAYS="${LOOKBACK_DAYS:-1900}" # 소스 조회 기간(달력일, ≈5.2년)
 MARKET="${MARKET:-krx}"                # krx | us
 CURRENCY="${CURRENCY:-KRW}"            # KRW | USD
 STOOQ_S="${STOOQ_S:-${NUMCODE}.kr}"    # Stooq 심볼(국내 ${코드}.kr, 미국 ${티커}.us)
@@ -71,13 +76,13 @@ fi
 # ---------- 1.5) Naver Finance (국내, 키 불필요, 실제 시세) ----------
 # pykrx가 러너에서 실제와 다른 값을 주는 사례가 있어, 국내는 네이버 일봉을 먼저 쓴다.
 if [ "$ok" -ne 1 ] && [ "$MARKET" = "krx" ]; then
-  ns="$(python3 -c 'import datetime;print((datetime.datetime.now()-datetime.timedelta(days=400)).strftime("%Y%m%d"))')"
+  ns="$(python3 -c "import datetime;print((datetime.datetime.now()-datetime.timedelta(days=${LOOKBACK_DAYS})).strftime('%Y%m%d'))")"
   ne="$(python3 -c 'import datetime;print(datetime.datetime.now().strftime("%Y%m%d"))')"
   code=$(fetch "Naver(${NUMCODE})" "https://api.finance.naver.com/siseJson.naver?symbol=${NUMCODE}&requestType=1&startTime=${ns}&endTime=${ne}&timeframe=day")
   if [ "$code" = "200" ]; then
-    if python3 - "$tmp" "$OUT" "$NAME" "$UPDATED" "$SYMLABEL" "$CURRENCY" <<'PY'
+    if python3 - "$tmp" "$OUT" "$NAME" "$UPDATED" "$SYMLABEL" "$CURRENCY" "$MAXPTS" <<'PY'
 import sys, ast, json, datetime
-src, out, name, updated, symbol, currency = sys.argv[1:7]
+src, out, name, updated, symbol, currency, maxpts = sys.argv[1:8]
 raw = open(src, encoding="utf-8").read().strip()
 try:
     rows = ast.literal_eval(raw)          # 네이버 응답은 파이썬 리터럴(작은따옴표)
@@ -95,7 +100,7 @@ for r in rows[1:]:                        # rows[0]은 헤더
             .replace(tzinfo=datetime.timezone.utc).timestamp())
     if c > 0:
         pts.append({"t": t, "c": c})
-pts = pts[-260:]
+pts = pts[-int(maxpts):]
 if len(pts) < 5:
     sys.exit("Naver 데이터 부족")
 json.dump({"symbol": symbol, "name": name, "currency": currency,
@@ -111,9 +116,9 @@ fi
 if [ "$ok" -ne 1 ]; then
   code=$(fetch "Stooq(${STOOQ_S})" "https://stooq.com/q/d/l/?s=${STOOQ_S}&i=d")
   if [ "$code" = "200" ] && head -1 "$tmp" | grep -qi "date"; then
-    if python3 - "$tmp" "$OUT" "$NAME" "$UPDATED" "$SYMLABEL" "$CURRENCY" <<'PY'
+    if python3 - "$tmp" "$OUT" "$NAME" "$UPDATED" "$SYMLABEL" "$CURRENCY" "$MAXPTS" <<'PY'
 import sys, json, csv, datetime
-src, out, name, updated, symbol, currency = sys.argv[1:7]
+src, out, name, updated, symbol, currency, maxpts = sys.argv[1:8]
 rows = []
 with open(src, newline="") as f:
     for row in csv.DictReader(f):
@@ -124,7 +129,7 @@ with open(src, newline="") as f:
         t = int(datetime.datetime.strptime(d, "%Y-%m-%d")
                 .replace(tzinfo=datetime.timezone.utc).timestamp())
         rows.append({"t": t, "c": c})
-rows = rows[-260:]
+rows = rows[-int(maxpts):]
 if len(rows) < 5:
     sys.exit("Stooq: 데이터 부족")
 json.dump({"symbol": symbol, "name": name, "currency": currency,
@@ -141,15 +146,15 @@ fi
 if [ "$ok" -ne 1 ] && [ "$MARKET" = "krx" ]; then
   echo "  · pykrx: 설치 및 조회 시도..." >&2
   if python3 -m pip install --quiet --disable-pip-version-check pykrx >/tmp/pip.log 2>&1; then
-    if python3 - "$OUT" "$NAME" "$UPDATED" "$NUMCODE" <<'PY'
+    if python3 - "$OUT" "$NAME" "$UPDATED" "$NUMCODE" "$LOOKBACK_DAYS" "$MAXPTS" <<'PY'
 import sys, json, datetime
-out, name, updated, numcode = sys.argv[1:5]
+out, name, updated, numcode, lookback, maxpts = sys.argv[1:7]
 try:
     from pykrx import stock
 except Exception as e:
     sys.exit("pykrx import 실패: %s" % e)
 end = datetime.datetime.now()
-start = end - datetime.timedelta(days=400)
+start = end - datetime.timedelta(days=int(lookback))
 df = stock.get_market_ohlcv(start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), numcode)
 if df is None or df.empty:
     sys.exit("pykrx: 빈 데이터")
@@ -159,7 +164,7 @@ for idx, row in df.iterrows():
     c = float(row["종가"])
     if c > 0:
         points.append({"t": int(d.timestamp()), "c": c})
-points = points[-260:]
+points = points[-int(maxpts):]
 if len(points) < 5:
     sys.exit("pykrx: 데이터 부족")
 json.dump({"symbol": numcode + ".KS", "name": name, "currency": "KRW",
@@ -179,7 +184,7 @@ fi
 # 국내는 exchange=KRX가 필요하고, 미국은 심볼만으로 조회한다.
 if [ "$ok" -ne 1 ] && [ -n "${TWELVEDATA_API_KEY:-}" ]; then
   td_ex=""; [ "$MARKET" = "krx" ] && td_ex="&exchange=KRX"
-  code=$(fetch "TwelveData" "https://api.twelvedata.com/time_series?symbol=${NUMCODE}${td_ex}&interval=1day&outputsize=260&order=ASC&apikey=${TWELVEDATA_API_KEY}")
+  code=$(fetch "TwelveData" "https://api.twelvedata.com/time_series?symbol=${NUMCODE}${td_ex}&interval=1day&outputsize=${MAXPTS}&order=ASC&apikey=${TWELVEDATA_API_KEY}")
   if [ "$code" = "200" ] && jq -e '.values and (.values|length>0)' "$tmp" >/dev/null 2>&1; then
     jq --arg name "$NAME" --arg updated "$UPDATED" --arg sym "$SYMLABEL" --arg cur "$CURRENCY" '
       { symbol: $sym, name: $name, currency: $cur,
@@ -195,12 +200,12 @@ fi
 if [ "$ok" -ne 1 ] && [ -n "${FMP_API_KEY:-}" ]; then
   code=$(fetch "FMP" "https://financialmodelingprep.com/api/v3/historical-price-full/${SYMBOL}?serietype=line&apikey=${FMP_API_KEY}")
   if [ "$code" = "200" ] && jq -e '.historical and (.historical|length>0)' "$tmp" >/dev/null 2>&1; then
-    jq --arg name "$NAME" --arg updated "$UPDATED" --arg sym "$SYMLABEL" --arg cur "$CURRENCY" '
+    jq --arg name "$NAME" --arg updated "$UPDATED" --arg sym "$SYMLABEL" --arg cur "$CURRENCY" --argjson n "$MAXPTS" '
       { symbol: $sym, name: $name, currency: $cur,
         price: (.historical[0].close),
         marketTime: (.historical[0].date | strptime("%Y-%m-%d") | mktime),
         updated: $updated,
-        points: [ .historical | reverse | .[-260:][] | { t: (.date | strptime("%Y-%m-%d") | mktime), c: .close } ] }' "$tmp" > "$OUT"
+        points: [ .historical | reverse | .[-$n:][] | { t: (.date | strptime("%Y-%m-%d") | mktime), c: .close } ] }' "$tmp" > "$OUT"
     ok=1; echo "→ 성공: Financial Modeling Prep"
   fi
 fi
