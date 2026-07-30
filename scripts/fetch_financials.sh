@@ -25,10 +25,19 @@ if [ "$MARKET" = "krx" ]; then
   # ---------- DART: 분기 영업이익(누적 → 이산) ----------
   if [ -z "${DART_API_KEY:-}" ]; then echo "DART_API_KEY 미설정 → 영업이익 건너뜀(${NAME})" >&2; exit 0; fi
   # corp_code 미지정 시 종목코드(NUMCODE)로 DART corpCode.xml에서 자동 조회(추측 방지).
+  # corpCode.xml(~1.4MB)은 러너에서 느릴 수 있어 타임아웃을 넉넉히·재시도하고,
+  # 받은 파일을 고정 경로에 캐시해 같은 빌드의 다른 국내 종목이 재사용한다.
   if [ -z "$CORP_CODE" ] && [ -n "$NUMCODE" ]; then
-    czip="$(mktemp)"
-    if curl -sfL --max-time 60 -A "$UA" -o "$czip" \
-      "https://opendart.fss.or.kr/api/corpCode.xml?crtfc_key=${DART_API_KEY}" 2>/dev/null; then
+    czip="/tmp/dart_corpcode.zip"; ctried="/tmp/dart_corpcode.tried"
+    if [ ! -s "$czip" ] && [ ! -f "$ctried" ]; then
+      echo "  · corpCode.xml 다운로드 중(${NAME})..." >&2
+      curl -sfL --connect-timeout 15 --max-time 90 --retry 3 --retry-delay 4 --retry-all-errors \
+        -A "$UA" -o "$czip" \
+        "https://opendart.fss.or.kr/api/corpCode.xml?crtfc_key=${DART_API_KEY}" 2>/dev/null || rm -f "$czip"
+      touch "$ctried"
+      [ -s "$czip" ] || echo "  · corpCode.xml 다운로드 실패" >&2
+    fi
+    if [ -s "$czip" ]; then
       CORP_CODE="$(python3 - "$czip" "$NUMCODE" <<'PY'
 import sys, zipfile, xml.etree.ElementTree as ET
 try:
@@ -42,11 +51,8 @@ for it in root.iter("list"):
         print((it.findtext("corp_code") or "").strip()); break
 PY
 )"
-      echo "  · corp_code 자동조회: ${NUMCODE} → ${CORP_CODE:-(실패)}" >&2
-    else
-      echo "  · corpCode.xml 다운로드 실패(${NAME})" >&2
+      echo "  · corp_code 자동조회: ${NUMCODE} → ${CORP_CODE:-(미발견)}" >&2
     fi
-    rm -f "$czip"
   fi
   if [ -z "$CORP_CODE" ]; then echo "CORP_CODE 미설정 → 영업이익 건너뜀(${NAME})" >&2; exit 0; fi
 
