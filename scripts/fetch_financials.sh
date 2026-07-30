@@ -11,9 +11,10 @@ set -uo pipefail
 OUT="${OUT:-stock-analyzer/hynix/financials.json}"
 NAME="${NAME:-SK하이닉스}"
 SYMBOL="${SYMBOL:-}"
+NUMCODE="${NUMCODE:-}"               # 국내 6자리 종목코드(corp_code 자동조회용)
 MARKET="${MARKET:-krx}"
 CURRENCY="${CURRENCY:-KRW}"
-CORP_CODE="${CORP_CODE:-}"          # DART 8자리 고유번호(국내)
+CORP_CODE="${CORP_CODE:-}"          # DART 8자리 고유번호(국내). 미지정 시 NUMCODE로 조회
 UPDATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
@@ -23,6 +24,30 @@ tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
 if [ "$MARKET" = "krx" ]; then
   # ---------- DART: 분기 영업이익(누적 → 이산) ----------
   if [ -z "${DART_API_KEY:-}" ]; then echo "DART_API_KEY 미설정 → 영업이익 건너뜀(${NAME})" >&2; exit 0; fi
+  # corp_code 미지정 시 종목코드(NUMCODE)로 DART corpCode.xml에서 자동 조회(추측 방지).
+  if [ -z "$CORP_CODE" ] && [ -n "$NUMCODE" ]; then
+    czip="$(mktemp)"
+    if curl -sfL --max-time 60 -A "$UA" -o "$czip" \
+      "https://opendart.fss.or.kr/api/corpCode.xml?crtfc_key=${DART_API_KEY}" 2>/dev/null; then
+      CORP_CODE="$(python3 - "$czip" "$NUMCODE" <<'PY'
+import sys, zipfile, xml.etree.ElementTree as ET
+try:
+    zf = zipfile.ZipFile(sys.argv[1])
+    root = ET.fromstring(zf.read(zf.namelist()[0]).decode("utf-8"))
+except Exception:
+    print(""); sys.exit(0)
+code = sys.argv[2]
+for it in root.iter("list"):
+    if (it.findtext("stock_code") or "").strip() == code:
+        print((it.findtext("corp_code") or "").strip()); break
+PY
+)"
+      echo "  · corp_code 자동조회: ${NUMCODE} → ${CORP_CODE:-(실패)}" >&2
+    else
+      echo "  · corpCode.xml 다운로드 실패(${NAME})" >&2
+    fi
+    rm -f "$czip"
+  fi
   if [ -z "$CORP_CODE" ]; then echo "CORP_CODE 미설정 → 영업이익 건너뜀(${NAME})" >&2; exit 0; fi
 
   years="$(python3 -c 'import datetime;y=datetime.datetime.now().year;print(" ".join(str(y-i) for i in range(0,6)))')"

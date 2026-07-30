@@ -55,10 +55,14 @@ jobs:
             stock-analyzer/samsung/fundamentals.json
             stock-analyzer/micron/fundamentals.json
             stock-analyzer/nvidia/fundamentals.json
+            stock-analyzer/kb/fundamentals.json
+            stock-analyzer/nh/fundamentals.json
             stock-analyzer/hynix/financials.json
             stock-analyzer/samsung/financials.json
             stock-analyzer/micron/financials.json
             stock-analyzer/nvidia/financials.json
+            stock-analyzer/kb/financials.json
+            stock-analyzer/nh/financials.json
           key: dash-cache-${{ github.run_id }}
           restore-keys: |
             dash-cache-
@@ -120,6 +124,30 @@ jobs:
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
 
+      - name: Fetch KB Financial price data
+        continue-on-error: true
+        run: bash scripts/fetch_stock.sh
+        env:
+          SYMBOL: '105560.KS'
+          NUMCODE: '105560'
+          NAME: 'KB금융'
+          RANGE: '5y'
+          OUT: 'stock-analyzer/kb/data.json'
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+
+      - name: Fetch NH Investment price data
+        continue-on-error: true
+        run: bash scripts/fetch_stock.sh
+        env:
+          SYMBOL: '005940.KS'
+          NUMCODE: '005940'
+          NAME: 'NH투자증권'
+          RANGE: '5y'
+          OUT: 'stock-analyzer/nh/data.json'
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+
       # ── 뉴스 심리(간이): Google News RSS + 키워드 규칙 (키 불필요) ──
       - name: Analyze SK Hynix news (keyword-based, no API key)
         continue-on-error: true
@@ -152,6 +180,22 @@ jobs:
           NAME: '엔비디아'
           NEWS_QUERY: '엔비디아'
           NEWS_OUT: 'stock-analyzer/nvidia/news.json'
+
+      - name: Analyze KB Financial news (keyword-based, no API key)
+        continue-on-error: true
+        run: bash scripts/fetch_news.sh
+        env:
+          NAME: 'KB금융'
+          NEWS_QUERY: 'KB금융'
+          NEWS_OUT: 'stock-analyzer/kb/news.json'
+
+      - name: Analyze NH Investment news (keyword-based, no API key)
+        continue-on-error: true
+        run: bash scripts/fetch_news.sh
+        env:
+          NAME: 'NH투자증권'
+          NEWS_QUERY: 'NH투자증권'
+          NEWS_OUT: 'stock-analyzer/nh/news.json'
 
       # ── 재무지표(PER·영업이익): 분기 데이터라 자주 바뀌지 않고 미국 API 한도가
       #    빡빡하므로, 10분(시세) 실행에서는 건너뛰고 4시간 실행에서만 갱신한다.
@@ -208,6 +252,30 @@ jobs:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
           ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
 
+      - name: Fetch KB Financial fundamentals (PER via Naver EPS)
+        if: ${{ github.event.schedule != '*/10 * * * 1-5' }}
+        continue-on-error: true
+        run: bash scripts/fetch_fundamentals.sh
+        env:
+          NAME: 'KB금융'
+          NUMCODE: '105560'
+          MARKET: 'krx'
+          CURRENCY: 'KRW'
+          OUT: 'stock-analyzer/kb/fundamentals.json'
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+
+      - name: Fetch NH Investment fundamentals (PER via Naver EPS)
+        if: ${{ github.event.schedule != '*/10 * * * 1-5' }}
+        continue-on-error: true
+        run: bash scripts/fetch_fundamentals.sh
+        env:
+          NAME: 'NH투자증권'
+          NUMCODE: '005940'
+          MARKET: 'krx'
+          CURRENCY: 'KRW'
+          OUT: 'stock-analyzer/nh/fundamentals.json'
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+
       # ── 영업이익(분기): 국내는 DART, 미국은 FMP·Alpha Vantage. (4시간 실행에서만) ──
       - name: Fetch SK Hynix operating income (DART)
         if: ${{ github.event.schedule != '*/10 * * * 1-5' }}
@@ -259,6 +327,30 @@ jobs:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
           ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
 
+      - name: Fetch KB Financial operating income (DART)
+        if: ${{ github.event.schedule != '*/10 * * * 1-5' }}
+        continue-on-error: true
+        run: bash scripts/fetch_financials.sh
+        env:
+          NAME: 'KB금융'
+          NUMCODE: '105560'
+          MARKET: 'krx'
+          CURRENCY: 'KRW'
+          OUT: 'stock-analyzer/kb/financials.json'
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+
+      - name: Fetch NH Investment operating income (DART)
+        if: ${{ github.event.schedule != '*/10 * * * 1-5' }}
+        continue-on-error: true
+        run: bash scripts/fetch_financials.sh
+        env:
+          NAME: 'NH투자증권'
+          NUMCODE: '005940'
+          MARKET: 'krx'
+          CURRENCY: 'KRW'
+          OUT: 'stock-analyzer/nh/financials.json'
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+
       # 이번 실행의 데이터(신규 성공분 또는 복원분)를 캐시에 저장 → 다음 실행에서 복원.
       # PER·영업이익은 4시간 실행에서 갱신되고, 그 사이 10분 실행들은 이 캐시로 유지된다.
       - name: Save market data to cache
@@ -272,10 +364,14 @@ jobs:
             stock-analyzer/samsung/fundamentals.json
             stock-analyzer/micron/fundamentals.json
             stock-analyzer/nvidia/fundamentals.json
+            stock-analyzer/kb/fundamentals.json
+            stock-analyzer/nh/fundamentals.json
             stock-analyzer/hynix/financials.json
             stock-analyzer/samsung/financials.json
             stock-analyzer/micron/financials.json
             stock-analyzer/nvidia/financials.json
+            stock-analyzer/kb/financials.json
+            stock-analyzer/nh/financials.json
           key: dash-cache-${{ github.run_id }}
 
       - name: Configure Pages
