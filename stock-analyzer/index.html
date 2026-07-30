@@ -347,7 +347,20 @@
   <!-- AI NEWS ANALYSIS -->
   <section class="card news" id="news-card" hidden></section>
 
-  <!-- PRICE CHART -->
+  <!-- RSI CHART -->
+  <section class="card chart-card">
+    <div class="chart-head"><h3>RSI (14)</h3><span class="seg-lbl">과매수 70 · 과매도 30</span></div>
+    <div class="chart-box"><div id="tip-rsi" class="tip"></div><svg id="chart-rsi" viewBox="0 0 340 130" preserveAspectRatio="none" role="img" aria-label="RSI 차트"></svg></div>
+  </section>
+
+  <!-- MACD CHART -->
+  <section class="card chart-card">
+    <div class="chart-head"><h3>MACD (12·26·9)</h3></div>
+    <div class="legend" id="macd-legend"></div>
+    <div class="chart-box"><div id="tip-macd" class="tip"></div><svg id="chart-macd" viewBox="0 0 340 140" preserveAspectRatio="none" role="img" aria-label="MACD 차트"></svg></div>
+  </section>
+
+  <!-- PRICE CHART (일봉) -->
   <section class="card chart-card">
     <div class="chart-head">
       <h3>가격 · 이동평균 · 볼린저밴드</h3>
@@ -368,19 +381,6 @@
     <div class="chart-head"><h3>월봉 · 가격 · 이동평균 · 볼린저밴드</h3></div>
     <div class="legend" id="monthly-legend"></div>
     <div class="chart-box"><div id="monthly-readout" class="chart-readout" hidden></div><div id="tip-monthly" class="tip"></div><svg id="chart-monthly" viewBox="0 0 340 210" preserveAspectRatio="none" role="img" aria-label="월봉 가격 차트"></svg></div>
-  </section>
-
-  <!-- RSI CHART -->
-  <section class="card chart-card">
-    <div class="chart-head"><h3>RSI (14)</h3><span class="seg-lbl">과매수 70 · 과매도 30</span></div>
-    <div class="chart-box"><div id="tip-rsi" class="tip"></div><svg id="chart-rsi" viewBox="0 0 340 130" preserveAspectRatio="none" role="img" aria-label="RSI 차트"></svg></div>
-  </section>
-
-  <!-- MACD CHART -->
-  <section class="card chart-card">
-    <div class="chart-head"><h3>MACD (12·26·9)</h3></div>
-    <div class="legend" id="macd-legend"></div>
-    <div class="chart-box"><div id="tip-macd" class="tip"></div><svg id="chart-macd" viewBox="0 0 340 140" preserveAspectRatio="none" role="img" aria-label="MACD 차트"></svg></div>
   </section>
 
   <!-- PER CHART (재무지표) -->
@@ -628,7 +628,7 @@
          <h3>PER (주가수익비율)</h3>
          <span class="seg-lbl">현재 ${esc(String(f.per.current))}배${upd ? " · " + upd : ""}</span>
        </div>
-       <div class="chart-box"><svg id="chart-per" viewBox="0 0 340 140" preserveAspectRatio="none" role="img" aria-label="PER 추이 차트"></svg></div>`;
+       <div class="chart-box"><div id="per-readout" class="chart-readout" hidden></div><svg id="chart-per" viewBox="0 0 340 140" preserveAspectRatio="none" role="img" aria-label="PER 추이 차트"></svg></div>`;
     card.hidden = false;
     drawPer(f);
   }
@@ -639,7 +639,16 @@
     const W = 340, H = 140; svg.innerHTML = "";
     const pts = f.per.points, n = pts.length;
     const vals = pts.map(p => p.v);
-    let mn = Math.min(...vals), mx = Math.max(...vals);
+    const dataMax = Math.max(...vals), dataMin = Math.min(...vals);
+    // 좌측 상단: 기간 내 PER 최고·최저값
+    const roBox = document.getElementById("per-readout");
+    if (roBox) {
+      roBox.innerHTML =
+        `<div class="ro-row"><span class="ro-k"><span class="sw" style="background:${cssv("--up")}"></span>최고 PER</span><span class="ro-v">${dataMax.toFixed(2)}배</span></div>` +
+        `<div class="ro-row"><span class="ro-k"><span class="sw" style="background:${cssv("--down")}"></span>최저 PER</span><span class="ro-v">${dataMin.toFixed(2)}배</span></div>`;
+      roBox.hidden = false;
+    }
+    let mn = dataMin, mx = dataMax;
     const pad = (mx - mn) * 0.08 || 1; mn = Math.max(0, mn - pad); mx += pad;
     const x = i => xScale(i, n, W);
     const y = v => PAD.t + (1 - (v - mn) / (mx - mn)) * (H - PAD.t - PAD.b);
@@ -653,8 +662,8 @@
       stroke: cssv("--ma20"), "stroke-width": 1.8, "stroke-linejoin": "round" }));
     const last = pts[n - 1];
     svg.appendChild(el("circle", { cx: x(n - 1), cy: y(last.v), r: 3, fill: cssv("--ma20") }));
-    // x축 날짜 라벨
-    const dates = pts.map(p => new Date(p.t * 1000).toLocaleDateString("ko-KR", { month: "2-digit", day: "2-digit", timeZone: "Asia/Seoul" }));
+    // x축 날짜 라벨(5년 범위라 연도 포함)
+    const dates = pts.map(p => new Date(p.t * 1000).toLocaleDateString("ko-KR", { year: "2-digit", month: "2-digit", timeZone: "Asia/Seoul" }));
     const idxs = [0, Math.round((n - 1) / 2), n - 1];
     idxs.forEach((i, k) => {
       const anchor = k === 0 ? "start" : k === idxs.length - 1 ? "end" : "middle";
@@ -735,6 +744,7 @@
       svg.appendChild(t);
     });
     const bw = (W - P.l - P.r) / n * 0.62;
+    const dense = n > 12;   // 분기 수가 많으면(5년≈20분기) 연도 표시만
     let prevY = null;
     pts.forEach((p, i) => {
       const cx = P.l + (n <= 1 ? 0.5 : (i + 0.5) / n) * (W - P.l - P.r);
@@ -743,13 +753,19 @@
       const up = p.value >= 0;
       svg.appendChild(el("rect", { x: cx - bw / 2, y: top, width: bw, height: h, rx: 2,
         fill: up ? cssv("--up") : cssv("--down"), opacity: .85 }));
-      // 분기 라벨: 해가 바뀔 때만 연도(''YY)를 앞에 붙여 혼잡을 줄인다. 예: '25 2Q → 3Q → 4Q
+      // 라벨: 촘촘하면 해가 바뀔 때 연도(''YY)만, 아니면 분기까지 표시(예: '25 2Q → 3Q)
       const qp = qParts(p.period);
       let txt = p.period;
-      if (qp) { txt = (qp.y !== prevY ? "'" + qp.y.slice(2) + " " : "") + qp.q + "Q"; prevY = qp.y; }
-      const lbl = el("text", { class: "axis-txt", x: cx, y: H - 6, "text-anchor": "middle" });
-      lbl.textContent = txt;
-      svg.appendChild(lbl);
+      if (qp) {
+        if (dense) { txt = qp.y !== prevY ? "'" + qp.y.slice(2) : ""; }
+        else { txt = (qp.y !== prevY ? "'" + qp.y.slice(2) + " " : "") + qp.q + "Q"; }
+        prevY = qp.y;
+      }
+      if (txt) {
+        const lbl = el("text", { class: "axis-txt", x: cx, y: H - 6, "text-anchor": "middle" });
+        lbl.textContent = txt;
+        svg.appendChild(lbl);
+      }
     });
     // 0선
     svg.appendChild(el("line", { x1: P.l, x2: W - P.r, y1: y0, y2: y0, stroke: cssv("--border-strong"), "stroke-width": 1 }));
