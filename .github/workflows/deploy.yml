@@ -29,10 +29,12 @@ permissions:
   pages: write
   id-token: write
 
-# 배포는 하나씩만. 진행 중인 오래된 실행은 취소.
+# 배포는 하나씩만. 진행 중인 실행은 취소하지 않고 큐잉한다(cancel-in-progress: false).
+# 국내 재무(6년 DART)로 full 빌드가 길어져, 10분 시세 스케줄이 push 빌드를
+# 중간에 취소하던 문제 방지 — 진행 중 빌드는 끝까지 돌고 다음 실행이 뒤이어 실행.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
