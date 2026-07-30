@@ -234,6 +234,21 @@
   .tip .trow .k .sw { width: 9px; height: 9px; border-radius: 2px; }
   .tip .trow .v { font-weight: 700; font-variant-numeric: tabular-nums; }
   .chart-box { position: relative; }
+  /* 차트 좌측 상단 현재값 오버레이(MA·볼린저) */
+  .chart-readout {
+    position: absolute; left: 6px; top: 6px; z-index: 3; pointer-events: none;
+    display: flex; flex-direction: column; gap: 1px; padding: 5px 7px;
+    border-radius: 8px; border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 82%, transparent);
+    font-size: 9.5px; line-height: 1.3;
+  }
+  @supports not (background: color-mix(in srgb, white, black)) { .chart-readout { background: var(--surface); } }
+  .chart-readout .ro-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .chart-readout .ro-k { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-2); font-weight: 650; }
+  .chart-readout .ro-k .sw { width: 8px; height: 8px; border-radius: 2px; }
+  .chart-readout .ro-k .sw.dash { background: none !important; border-top: 2px dashed currentColor; border-radius: 0; height: 0; }
+  .chart-readout .ro-v { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .chart-readout[hidden] { display: none; }
 
   /* ---- Input ---- */
   details.io { border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); overflow: hidden; box-shadow: var(--shadow); }
@@ -338,7 +353,7 @@
       <h3>가격 · 이동평균 · 볼린저밴드</h3>
     </div>
     <div class="legend" id="price-legend"></div>
-    <div class="chart-box"><div id="tip-price" class="tip"></div><svg id="chart-price" viewBox="0 0 340 210" preserveAspectRatio="none" role="img" aria-label="가격 및 이동평균 차트"></svg></div>
+    <div class="chart-box"><div id="price-readout" class="chart-readout" hidden></div><div id="tip-price" class="tip"></div><svg id="chart-price" viewBox="0 0 340 210" preserveAspectRatio="none" role="img" aria-label="가격 및 이동평균 차트"></svg></div>
   </section>
 
   <!-- WEEKLY PRICE CHART -->
@@ -1002,7 +1017,28 @@
     }
 
     svg._meta = { x, y, n, W, H };
+    renderPriceReadout(A);
     attachHover(svg, "tip-price", A, buildPriceTip);
+  }
+
+  // 차트 좌측 상단: 현재(최근) MA5·MA20·MA60·볼린저 상단/하단 값
+  function renderPriceReadout(A) {
+    const box = document.getElementById("price-readout");
+    if (!box) return;
+    const i = A.closes.length - 1;
+    const unit = curCurrency === "USD" ? " " + unitLabel() : "원";
+    const rows = [
+      { k: "MA5", c: cssv("--ma5"), v: A.ma5[i] },
+      { k: "MA20", c: cssv("--ma20"), v: A.ma20[i] },
+      { k: "MA60", c: cssv("--ma60"), v: A.ma60[i] },
+      { k: "볼린저 상단", c: cssv("--ma20"), v: A.bb.up[i], dash: true },
+      { k: "볼린저 하단", c: cssv("--ma20"), v: A.bb.lo[i], dash: true },
+    ];
+    box.innerHTML = rows.map(r =>
+      `<div class="ro-row"><span class="ro-k"><span class="sw ${r.dash ? "dash" : ""}" style="${r.dash ? "color:" + r.c : "background:" + r.c}"></span>${r.k}</span>` +
+      `<span class="ro-v">${r.v == null ? "–" : fmtPx(r.v) + unit}</span></div>`
+    ).join("");
+    box.hidden = false;
   }
 
   function drawRsi(A) {
