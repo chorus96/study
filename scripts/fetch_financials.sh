@@ -3,7 +3,7 @@
 #  - 국내(KRX): DART(전자공시) 무료 오픈API. DART_API_KEY + CORP_CODE 필요.
 #               분기·반기보고서는 '당기 3개월' 실적, 사업보고서만 '연간 누적'이라
 #               Q1·Q2·Q3는 그대로 쓰고 Q4 = 연간 − (Q1+Q2+Q3)로 계산한다.
-#  - 미국(US) : FMP(period=quarter) → Alpha Vantage(quarterlyReports) 폴백.
+#  - 미국(US) : Alpha Vantage(quarterlyReports, 20+분기) → FMP(무료 5분기) 폴백.
 # 키가 없거나 수집에 실패하면 조용히 건너뛴다(파일 미생성 → 앱이 카드 숨김).
 # 배포를 막지 않도록 항상 exit 0.
 set -uo pipefail
@@ -25,7 +25,7 @@ if [ "$MARKET" = "krx" ]; then
   if [ -z "${DART_API_KEY:-}" ]; then echo "DART_API_KEY 미설정 → 영업이익 건너뜀(${NAME})" >&2; exit 0; fi
   if [ -z "$CORP_CODE" ]; then echo "CORP_CODE 미설정 → 영업이익 건너뜀(${NAME})" >&2; exit 0; fi
 
-  years="$(python3 -c 'import datetime;y=datetime.datetime.now().year;print(" ".join(str(y-i) for i in range(0,4)))')"
+  years="$(python3 -c 'import datetime;y=datetime.datetime.now().year;print(" ".join(str(y-i) for i in range(0,6)))')"
   echo "영업이익(DART·분기) 수집 시작: ${NAME} corp=${CORP_CODE}, years=${years}"
   work="$(mktemp -d)"; trap 'rm -rf "$tmp" "$work"' EXIT
   # 분기 reprt_code: 1Q=11013, 반기(누적2Q)=11012, 3Q(누적3Q)=11014, 사업보고서(연간)=11011
@@ -95,7 +95,7 @@ for y in sorted(cum):
 if len(pts) < 2:
     sys.exit("분기 영업이익 데이터 부족")
 data = {"name": name, "currency": currency, "updated": updated,
-        "operatingIncome": {"unit": currency, "granularity": "quarter", "points": pts[-8:]}}
+        "operatingIncome": {"unit": currency, "granularity": "quarter", "points": pts[-20:]}}
 with open(out, "w", encoding="utf-8") as f:
     json.dump(data, f, ensure_ascii=False)
 print("영업이익(DART·분기) 완료:", len(pts), "분기 · 최근", pts[-1]["period"], pts[-1]["value"])
@@ -157,29 +157,31 @@ pts = [{"period": k, "value": by_q[k]} for k in keys]
 if len(pts) < 2:
     sys.exit("영업이익 데이터 부족")
 data = {"name": name, "currency": currency, "updated": updated,
-        "operatingIncome": {"unit": currency, "granularity": "quarter", "points": pts[-8:]}}
+        "operatingIncome": {"unit": currency, "granularity": "quarter", "points": pts[-20:]}}
 with open(out, "w", encoding="utf-8") as f:
     json.dump(data, f, ensure_ascii=False)
 print("영업이익(분기) 완료:", len(pts), "분기 · 최근", pts[-1]["period"], pts[-1]["value"])
 PY
 
-  if [ -n "${FMP_API_KEY:-}" ]; then
-    echo "영업이익(FMP·분기) 시도: ${NAME} (${SYMBOL})"
-    code=$(curl -sS --max-time 30 -A "$UA" -w '%{http_code}' -o "$tmp" \
-      "https://financialmodelingprep.com/stable/income-statement?symbol=${SYMBOL}&period=quarter&limit=5&apikey=${FMP_API_KEY}" 2>/dev/null || echo 000)
-    echo "  · FMP(stable) HTTP ${code}: $(head -c 140 "$tmp" 2>/dev/null | tr '\n' ' ')" >&2
-    if [ "$code" = "200" ] && python3 "$PARSE" "$OUT" "$NAME" "$UPDATED" "$CURRENCY" "$tmp" fmp; then
-      ok=1; echo "→ 성공: FMP (${NAME})"
-    fi
-  fi
-
-  if [ "$ok" -ne 1 ] && [ -n "${ALPHAVANTAGE_API_KEY:-}" ]; then
+  # 5년(≈20분기)을 채우려면 Alpha Vantage(quarterlyReports 20+개)를 먼저 쓴다.
+  # FMP 무료(stable)는 분기 limit이 최대 5라 5분기까지만 → AV 실패 시 폴백.
+  if [ -n "${ALPHAVANTAGE_API_KEY:-}" ]; then
     echo "영업이익(Alpha Vantage·분기) 시도: ${NAME} (${SYMBOL})"
     code=$(curl -sS --max-time 30 -A "$UA" -w '%{http_code}' -o "$tmp" \
       "https://www.alphavantage.co/query?function=INCOME_STATEMENT&symbol=${SYMBOL}&apikey=${ALPHAVANTAGE_API_KEY}" 2>/dev/null || echo 000)
     echo "  · AV HTTP ${code}: $(head -c 140 "$tmp" 2>/dev/null | tr '\n' ' ')" >&2
     if [ "$code" = "200" ] && python3 "$PARSE" "$OUT" "$NAME" "$UPDATED" "$CURRENCY" "$tmp" av; then
       ok=1; echo "→ 성공: Alpha Vantage (${NAME})"
+    fi
+  fi
+
+  if [ "$ok" -ne 1 ] && [ -n "${FMP_API_KEY:-}" ]; then
+    echo "영업이익(FMP·분기) 시도: ${NAME} (${SYMBOL})"
+    code=$(curl -sS --max-time 30 -A "$UA" -w '%{http_code}' -o "$tmp" \
+      "https://financialmodelingprep.com/stable/income-statement?symbol=${SYMBOL}&period=quarter&limit=5&apikey=${FMP_API_KEY}" 2>/dev/null || echo 000)
+    echo "  · FMP(stable) HTTP ${code}: $(head -c 140 "$tmp" 2>/dev/null | tr '\n' ' ')" >&2
+    if [ "$code" = "200" ] && python3 "$PARSE" "$OUT" "$NAME" "$UPDATED" "$CURRENCY" "$tmp" fmp; then
+      ok=1; echo "→ 성공: FMP (${NAME})"
     fi
   fi
 

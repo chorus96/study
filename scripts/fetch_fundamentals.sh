@@ -174,7 +174,7 @@ for p in data.get("points", []):
     c, t = p.get("c"), p.get("t")
     if c and t:
         pts.append({"t": int(t), "v": round(c / eps, 2)})
-pts = pts[-260:]
+pts = pts[-1300:]     # 최근 약 5년치(시세 data.json이 5년이므로 사실상 전체)
 if len(pts) < 5:
     sys.exit("PER 포인트 부족")
 out_data = {"name": name, "currency": currency, "updated": updated,
