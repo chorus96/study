@@ -500,7 +500,7 @@
   /* ---------- 실시간 데이터 로드 (GitHub Pages 등 same-origin) ---------- */
   async function loadLive(dir) {
     try {
-      const res = await fetch(`./${dir}/data.json`, { cache: "no-store" });
+      const res = await fetch(`./${dir}/data.json?t=${Date.now()}`, { cache: "no-store" });
       if (!res.ok) return null;
       const j = await res.json();
       const pts = j.points || [];
@@ -529,7 +529,7 @@
 
   async function loadNews(dir) {
     try {
-      const res = await fetch(`./${dir}/news.json`, { cache: "no-store" });
+      const res = await fetch(`./${dir}/news.json?t=${Date.now()}`, { cache: "no-store" });
       if (!res.ok) return null;
       const j = await res.json();
       if (!j.analysis || !j.analysis.sentiment) return null;
@@ -576,7 +576,7 @@
   let curFund = null;
   async function loadFundamentals(dir) {
     try {
-      const res = await fetch(`./${dir}/fundamentals.json`, { cache: "no-store" });
+      const res = await fetch(`./${dir}/fundamentals.json?t=${Date.now()}`, { cache: "no-store" });
       if (!res.ok) return null;
       const j = await res.json();
       if (!j.per || !j.per.points || !j.per.points.length) return null;
@@ -637,7 +637,7 @@
   let curFin = null;
   async function loadFinancials(dir) {
     try {
-      const res = await fetch(`./${dir}/financials.json`, { cache: "no-store" });
+      const res = await fetch(`./${dir}/financials.json?t=${Date.now()}`, { cache: "no-store" });
       if (!res.ok) return null;
       const j = await res.json();
       if (!j.operatingIncome || !j.operatingIncome.points || !j.operatingIncome.points.length) return null;
