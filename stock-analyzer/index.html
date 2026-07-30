@@ -360,14 +360,14 @@
   <section class="card chart-card" id="weekly-card" hidden>
     <div class="chart-head"><h3>주봉 · 가격 · 이동평균 · 볼린저밴드</h3></div>
     <div class="legend" id="weekly-legend"></div>
-    <div class="chart-box"><div id="tip-weekly" class="tip"></div><svg id="chart-weekly" viewBox="0 0 340 210" preserveAspectRatio="none" role="img" aria-label="주봉 가격 차트"></svg></div>
+    <div class="chart-box"><div id="weekly-readout" class="chart-readout" hidden></div><div id="tip-weekly" class="tip"></div><svg id="chart-weekly" viewBox="0 0 340 210" preserveAspectRatio="none" role="img" aria-label="주봉 가격 차트"></svg></div>
   </section>
 
   <!-- MONTHLY PRICE CHART -->
   <section class="card chart-card" id="monthly-card" hidden>
     <div class="chart-head"><h3>월봉 · 가격 · 이동평균 · 볼린저밴드</h3></div>
     <div class="legend" id="monthly-legend"></div>
-    <div class="chart-box"><div id="tip-monthly" class="tip"></div><svg id="chart-monthly" viewBox="0 0 340 210" preserveAspectRatio="none" role="img" aria-label="월봉 가격 차트"></svg></div>
+    <div class="chart-box"><div id="monthly-readout" class="chart-readout" hidden></div><div id="tip-monthly" class="tip"></div><svg id="chart-monthly" viewBox="0 0 340 210" preserveAspectRatio="none" role="img" aria-label="월봉 가격 차트"></svg></div>
   </section>
 
   <!-- RSI CHART -->
@@ -1175,8 +1175,8 @@
   /* ---------- 주봉·월봉 (가격·이동평균·볼린저밴드) ---------- */
   // 타임프레임 설정: 주봉은 주간 MA5/20/60, 월봉은 월간 MA6/12/24, 둘 다 볼린저(20,2).
   const TF = {
-    week:  { key: "week",  card: "weekly-card",  svg: "chart-weekly",  legend: "weekly-legend",  tip: "tip-weekly",  unit: "week",  ma: [5, 20, 60], bbP: 20, minPts: 8 },
-    month: { key: "month", card: "monthly-card", svg: "chart-monthly", legend: "monthly-legend", tip: "tip-monthly", unit: "month", ma: [6, 12, 24], bbP: 20, minPts: 6 },
+    week:  { key: "week",  card: "weekly-card",  svg: "chart-weekly",  legend: "weekly-legend",  tip: "tip-weekly",  readout: "weekly-readout",  unit: "week",  ma: [5, 20, 60], bbP: 20, minPts: 8 },
+    month: { key: "month", card: "monthly-card", svg: "chart-monthly", legend: "monthly-legend", tip: "tip-monthly", readout: "monthly-readout", unit: "month", ma: [6, 12, 24], bbP: 20, minPts: 6 },
   };
   const tfState = { week: { ma: [true, true, true], bb: true }, month: { ma: [true, true, true], bb: true } };
   const tfData = {};   // key → {closes, ma[], bb, dates, n} (토글·테마 재그리기에 사용)
@@ -1301,7 +1301,25 @@
       });
     }
     svg._meta = { x, y, n, W, H };
+    renderTFReadout(cfg, D);
     attachTFHover(svg, cfg, D);
+  }
+
+  // 주봉·월봉 차트 좌측 상단: 현재 MA·볼린저 상단/하단 값(cfg.ma 기간에 맞춰 라벨)
+  function renderTFReadout(cfg, D) {
+    const box = document.getElementById(cfg.readout);
+    if (!box) return;
+    const i = D.closes.length - 1;
+    const unit = curCurrency === "USD" ? " " + unitLabel() : "원";
+    const maColors = [cssv("--ma5"), cssv("--ma20"), cssv("--ma60")];
+    const rows = cfg.ma.map((p, k) => ({ k: "MA" + p, c: maColors[k], v: D.ma[k][i] }));
+    rows.push({ k: "볼린저 상단", c: cssv("--ma20"), v: D.bb.up[i], dash: true });
+    rows.push({ k: "볼린저 하단", c: cssv("--ma20"), v: D.bb.lo[i], dash: true });
+    box.innerHTML = rows.map(r =>
+      `<div class="ro-row"><span class="ro-k"><span class="sw ${r.dash ? "dash" : ""}" style="${r.dash ? "color:" + r.c : "background:" + r.c}"></span>${r.k}</span>` +
+      `<span class="ro-v">${r.v == null ? "–" : fmtPx(r.v) + unit}</span></div>`
+    ).join("");
+    box.hidden = false;
   }
 
   // 자체 크로스헤어 호버(일봉 차트와 독립: 타임프레임마다 x축이 다름)
