@@ -150,6 +150,24 @@ jobs:
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
 
+      # 가격 데이터만으로 예측 모델을 실행해 CI 로그와 실행 요약(Summary)에 남긴다.
+      # 가격 수집 직후에 배치해, 뒤따르는 느린 영업이익(DART) 수집에 막히지 않게 한다.
+      # (대시보드 예측 탭과 동일 로직 — 브라우저 대신 서버에서 실제 수치를 확인용으로 출력.)
+      - name: 예측 리포트 (마이크론·엔비디아 → 하이닉스)
+        if: always()
+        run: |
+          REPORT=$(python3 predict/predict_hynix_from_micron.py \
+            --hynix stock-analyzer/hynix/data.json \
+            --micron stock-analyzer/micron/data.json \
+            --nvidia stock-analyzer/nvidia/data.json 2>&1) || true
+          echo "$REPORT"
+          {
+            echo '## 마이크론·엔비디아 → 하이닉스 예측 (실데이터)'
+            echo '```'
+            echo "$REPORT"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # ── 뉴스 심리(간이): Google News RSS + 키워드 규칙 (키 불필요) ──
       - name: Analyze SK Hynix news (keyword-based, no API key)
         continue-on-error: true
@@ -375,23 +393,6 @@ jobs:
             stock-analyzer/kb/financials.json
             stock-analyzer/nh/financials.json
           key: dash-cache-${{ github.run_id }}
-
-      # 방금 수집한 실데이터로 예측 모델을 실행해 CI 로그와 실행 요약(Summary)에 남긴다.
-      # (대시보드 예측 탭과 동일 로직 — 브라우저 대신 서버에서 실제 수치를 확인용으로 출력.)
-      - name: 예측 리포트 (마이크론·엔비디아 → 하이닉스)
-        if: always()
-        run: |
-          REPORT=$(python3 predict/predict_hynix_from_micron.py \
-            --hynix stock-analyzer/hynix/data.json \
-            --micron stock-analyzer/micron/data.json \
-            --nvidia stock-analyzer/nvidia/data.json 2>&1) || true
-          echo "$REPORT"
-          {
-            echo '## 마이크론·엔비디아 → 하이닉스 예측 (실데이터)'
-            echo '```'
-            echo "$REPORT"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure Pages
         # 최초 1회만 Settings → Pages → Source를 "GitHub Actions"로 설정해야 함
