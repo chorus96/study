@@ -226,13 +226,16 @@ jobs:
         run: bash scripts/fetch_stock.sh
         env:
           SYMBOL: 'KRW=X'
-          NUMCODE: 'USDKRW'
+          # TwelveData FX는 'USD/KRW' 형식이어야 함(USDKRW는 404). Yahoo(KRW=X)가
+          # 429일 때 대비해 재시도도 늘림. Stooq usdkrw는 데이터가 부실해 제외 셈.
+          NUMCODE: 'USD/KRW'
           NAME: '원/달러 환율'
           MARKET: 'us'
           CURRENCY: 'KRW'
           STOOQ_S: 'usdkrw'
           SYMLABEL: 'USDKRW'
           RANGE: '5y'
+          YAHOO_ATTEMPTS: '3'
           OUT: 'stock-analyzer/usdkrw/data.json'
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
