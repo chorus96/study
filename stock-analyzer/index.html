@@ -182,6 +182,12 @@
   .chip .cstate { font-size: .74rem; font-weight: 700; }
   .st-up { color: var(--up); } .st-down { color: var(--down); } .st-flat { color: var(--flat); } .st-warn { color: var(--warn); }
 
+  /* ---- View tabs (종목 분석 / 예측) ---- */
+  .view-seg { align-self: stretch; }
+  .view-seg button { flex: 1; font-size: .92rem; font-weight: 750; padding: 11px 10px; }
+  #view-analysis, #view-predict { display: flex; flex-direction: column; gap: 14px; }
+  #view-analysis[hidden], #view-predict[hidden] { display: none; }  /* flex가 [hidden] 기본 display:none을 덮어쓰는 문제 방지 */
+
   /* ---- Micron → Hynix Prediction ---- */
   .pred-tag { font-size: .62rem; letter-spacing: .06em; font-weight: 700; color: var(--warn); background: var(--surface-2); border: 1px solid var(--border); padding: 2px 7px; border-radius: 8px; margin-left: 6px; vertical-align: middle; }
   .pred-main { display: flex; align-items: center; gap: 14px; margin: 2px 0 12px; }
@@ -313,6 +319,12 @@
 </style>
 
 <div class="wrap">
+  <div class="seg view-seg" id="view-seg" role="tablist" aria-label="화면 선택">
+    <button type="button" data-view="analysis" aria-pressed="true">종목 분석</button>
+    <button type="button" data-view="predict" aria-pressed="false">마이크론→하이닉스 예측</button>
+  </div>
+
+  <div id="view-analysis">
   <header>
     <span class="kicker">기술적 분석 · Technical Analysis</span>
     <div class="seg stock-seg" id="stock-seg" role="tablist" aria-label="종목 선택">
@@ -359,20 +371,6 @@
     <div class="meter"><span class="meter-fill" id="v-fill"></span><span class="meter-mid"></span></div>
     <div class="scale-lbls"><span>매도 우위</span><span>중립</span><span>매수 우위</span></div>
     <ul class="factors" id="factors"></ul>
-  </section>
-
-  <!-- MICRON → HYNIX PREDICTION (하이닉스 전용) -->
-  <section class="card" id="predict-card" hidden>
-    <p class="card-title">마이크론 → 하이닉스 예측 <span class="pred-tag">실험적</span></p>
-    <div class="pred-main">
-      <span class="pred-arrow flat" id="pred-arrow">–</span>
-      <div class="pred-nums">
-        <span class="pred-ret num" id="pred-ret">–</span>
-        <span class="pred-sub">예상 종가 <b class="num" id="pred-close">–</b> · 기준일 <span id="pred-base">–</span></span>
-      </div>
-    </div>
-    <div class="pred-stats" id="pred-stats"></div>
-    <p class="pred-note" id="pred-note"></p>
   </section>
 
   <!-- INDICATOR CHIPS -->
@@ -422,6 +420,30 @@
 
   <!-- 영업이익 CHART (재무지표) -->
   <section class="card chart-card" id="opinc-card" hidden></section>
+  </div><!-- /view-analysis -->
+
+  <!-- 예측 뷰 (별도 탭) -->
+  <div id="view-predict" hidden>
+    <header>
+      <span class="kicker">예측 · Prediction</span>
+      <div class="ticker-row">
+        <span class="ticker">마이크론 → SK하이닉스</span>
+        <span class="ticker-code">MU → KRX 000660</span>
+      </div>
+    </header>
+    <section class="card" id="predict-card">
+      <p class="card-title">다음 거래일 예측 <span class="pred-tag">실험적</span></p>
+      <div class="pred-main">
+        <span class="pred-arrow flat" id="pred-arrow">–</span>
+        <div class="pred-nums">
+          <span class="pred-ret num" id="pred-ret">–</span>
+          <span class="pred-sub">예상 종가 <b class="num" id="pred-close">–</b> · 기준일 <span id="pred-base">–</span></span>
+        </div>
+      </div>
+      <div class="pred-stats" id="pred-stats"></div>
+      <p class="pred-note" id="pred-note">불러오는 중…</p>
+    </section>
+  </div><!-- /view-predict -->
 
 </div>
 
@@ -1460,16 +1482,28 @@
     return { r2: sst > 0 ? 1 - ssr / sst : NaN, da: hit / n };
   }
 
-  async function renderPrediction(hyLive) {
-    const card = document.getElementById("predict-card");
-    // 하이닉스 실데이터가 있을 때만(예시 모드·타 종목에서는 숨김)
-    if (curStock !== "hynix" || !hyLive || !hyLive.pts) { card.hidden = true; return; }
-    const muLive = await loadLive("micron");
-    if (!muLive || !muLive.pts) { card.hidden = true; return; }
+  // 하이닉스 종가는 항상 KRW로 표기(예측 탭은 curCurrency와 무관)
+  const fmtKRW = n => (n == null || isNaN(n)) ? "–" : Math.round(n).toLocaleString("ko-KR") + "원";
+  function predMsg(msg) {
+    const a = document.getElementById("pred-arrow");
+    a.className = "pred-arrow flat"; a.textContent = "–";
+    document.getElementById("pred-ret").textContent = "–";
+    document.getElementById("pred-ret").className = "pred-ret num flat";
+    document.getElementById("pred-close").textContent = "–";
+    document.getElementById("pred-base").textContent = "–";
+    document.getElementById("pred-stats").innerHTML = "";
+    document.getElementById("pred-note").textContent = msg;
+  }
 
+  async function renderPrediction() {
+    document.getElementById("pred-note").textContent = "불러오는 중…";
+    const [hyLive, muLive] = await Promise.all([loadLive("hynix"), loadLive("micron")]);
+    if (!hyLive || !hyLive.pts || !muLive || !muLive.pts) {
+      predMsg("실시간 데이터를 불러오지 못했습니다. 잠시 후 새로고침해 주세요."); return;
+    }
     const muMap = closesByUTCDate(muLive.pts), hyMap = closesByUTCDate(hyLive.pts);
     const dates = Object.keys(muMap).filter(d => d in hyMap).sort();
-    if (dates.length < 60) { card.hidden = true; return; }
+    if (dates.length < 60) { predMsg("공통 거래일이 부족해 예측할 수 없습니다."); return; }
 
     const muR = _logret(dates.map(d => muMap[d]));   // index i ↔ dates[i+1]
     const hyC = dates.map(d => hyMap[d]);
@@ -1503,7 +1537,7 @@
     arrowEl.textContent = dir === "up" ? "▲ 상승" : dir === "down" ? "▼ 하락" : "― 보합";
     retEl.className = "pred-ret num " + dir;
     retEl.textContent = (predRet >= 0 ? "+" : "") + (predRet * 100).toFixed(2) + "%";
-    document.getElementById("pred-close").textContent = fmtPx(predClose) + "원";
+    document.getElementById("pred-close").textContent = fmtKRW(predClose);
     document.getElementById("pred-base").textContent = dates[dates.length - 1];
 
     const pct = v => isFinite(v) ? (v * 100).toFixed(1) + "%" : "–";
@@ -1517,7 +1551,6 @@
       "마이크론 전일 로그수익률로 하이닉스 다음 거래일 수익률을 회귀 예측합니다(미래참조 없음). "
       + "일간 예측의 설명력(R²)은 원래 낮은 것이 정상이며, 방향적중이 50%에 가까우면 실질 예측력이 "
       + "거의 없다는 뜻입니다. 학습·연구용 참고 지표이며 투자 자문이 아닙니다.";
-    card.hidden = false;
   }
 
   /* ---------- 종목 선택 (실시간 우선, 없으면 예시 폴백) ---------- */
@@ -1549,8 +1582,20 @@
     renderNews(news);
     renderFundamentals(fund);
     renderFinancials(fin);
-    renderPrediction(live);   // 하이닉스 실데이터에서만 마이크론 예측 표시(그 외 숨김)
   }
+
+  /* ---------- 상위 뷰(탭) 전환: 종목 분석 / 예측 ---------- */
+  function switchView(mode) {
+    const isPred = mode === "predict";
+    document.getElementById("view-analysis").hidden = isPred;
+    document.getElementById("view-predict").hidden = !isPred;
+    document.querySelectorAll("#view-seg button").forEach(b =>
+      b.setAttribute("aria-pressed", String(b.dataset.view === mode)));
+    if (isPred) renderPrediction();   // 진입할 때마다 최신 데이터로 계산
+    window.scrollTo(0, 0);
+  }
+  document.querySelectorAll("#view-seg button").forEach(b =>
+    b.addEventListener("click", () => switchView(b.dataset.view)));
 
   /* ---------- 이벤트 ---------- */
   document.querySelectorAll("#stock-seg button").forEach(b =>
