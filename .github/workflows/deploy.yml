@@ -376,6 +376,23 @@ jobs:
             stock-analyzer/nh/financials.json
           key: dash-cache-${{ github.run_id }}
 
+      # 방금 수집한 실데이터로 예측 모델을 실행해 CI 로그와 실행 요약(Summary)에 남긴다.
+      # (대시보드 예측 탭과 동일 로직 — 브라우저 대신 서버에서 실제 수치를 확인용으로 출력.)
+      - name: 예측 리포트 (마이크론·엔비디아 → 하이닉스)
+        if: always()
+        run: |
+          REPORT=$(python3 predict/predict_hynix_from_micron.py \
+            --hynix stock-analyzer/hynix/data.json \
+            --micron stock-analyzer/micron/data.json \
+            --nvidia stock-analyzer/nvidia/data.json 2>&1) || true
+          echo "$REPORT"
+          {
+            echo '## 마이크론·엔비디아 → 하이닉스 예측 (실데이터)'
+            echo '```'
+            echo "$REPORT"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Configure Pages
         # 최초 1회만 Settings → Pages → Source를 "GitHub Actions"로 설정해야 함
         # (워크플로 토큰은 Pages를 자동 생성할 권한이 없음).
