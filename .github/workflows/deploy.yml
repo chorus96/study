@@ -246,7 +246,12 @@ jobs:
           REPORT=$(python3 predict/predict_hynix_from_micron.py \
             --hynix stock-analyzer/hynix/data.json \
             --micron stock-analyzer/micron/data.json \
-            --nvidia stock-analyzer/nvidia/data.json 2>&1) || true
+            --nvidia stock-analyzer/nvidia/data.json \
+            --tsmc stock-analyzer/tsmc/data.json \
+            --amd stock-analyzer/amd/data.json \
+            --wdc stock-analyzer/wdc/data.json \
+            --soxx stock-analyzer/soxx/data.json \
+            --usdkrw stock-analyzer/usdkrw/data.json 2>&1) || true
           echo "$REPORT"
           {
             echo '## 마이크론·엔비디아 → 하이닉스 예측 (실데이터)'
