@@ -160,6 +160,18 @@ def sigmoid(x):
     return 1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, x))))
 
 
+def std(a):
+    if len(a) < 2:
+        return 0.0
+    m = sum(a) / len(a)
+    return math.sqrt(sum((v - m) ** 2 for v in a) / len(a))
+
+
+# 비선형·레짐: 기본 특징 + [주력(마이크론) 신호의 부호보존 제곱, 최근 하이닉스 변동성]
+def augment(feats, vol):
+    return feats + [feats[0] * abs(feats[0]), vol]
+
+
 # ----------------------------- 데이터셋 구성 -----------------------------
 def build(hy, feeds):
     """정밀 정렬로 (X, y, dates, hy_close, prev_y)를 만든다.
@@ -178,8 +190,10 @@ def build(hy, feeds):
             feats.append(math.log(b / a))
         if not ok:
             continue
-        X.append(feats)
-        y.append(math.log(hy[i][1] / hy[i - 1][1]))
+        cur = math.log(hy[i][1] / hy[i - 1][1])
+        vol = std(y[-20:])                 # 직전 20일 하이닉스 변동성(인과적 레짐)
+        X.append(augment(feats, vol))
+        y.append(cur)
         dates.append(dt.datetime.utcfromtimestamp(t1).strftime("%Y-%m-%d"))
         hyc.append(hy[i][1])
         prevy.append(y[-2] if len(y) >= 2 else 0.0)
@@ -197,7 +211,8 @@ def next_features(hy, feeds):
         if not base or base <= 0 or latest <= 0:
             return None
         feats.append(math.log(latest / base))
-    return feats
+    rets = [math.log(hy[k][1] / hy[k - 1][1]) for k in range(max(1, len(hy) - 20), len(hy))]
+    return augment(feats, std(rets))
 
 
 # ----------------------------- 평가 -----------------------------
@@ -234,8 +249,13 @@ def summarize(oos):
     base_up = max(up_rate, 1 - up_rate)                       # '항상 같은 방향'
     base_mom = sum(1 for o in oos if (o[4] >= 0) == (o[2] > 0)) / n   # 하이닉스 모멘텀
     base_us = sum(1 for o in oos if (o[3] >= 0) == (o[2] > 0)) / n    # 미국 신호 그대로
+    # 선택적 예측: 고신뢰일(|확률-0.5|>=0.10, 즉 60%↑)만 평가
+    conf = [o for o in oos if abs(o[1] - 0.5) >= 0.10]
+    acc_conf = (sum(1 for o in conf if (o[1] >= 0.5) == (o[2] > 0)) / len(conf)) if conf else float("nan")
+    coverage = len(conf) / n
     return dict(n=n, r2=r2, rmse=rmse, acc=acc_logit,
-                base_up=base_up, base_mom=base_mom, base_us=base_us)
+                base_up=base_up, base_mom=base_mom, base_us=base_us,
+                acc_conf=acc_conf, coverage=coverage)
 
 
 # ----------------------------- 메인 -----------------------------
@@ -249,6 +269,12 @@ def main():
     ap.add_argument("--micron", default=DEFAULT_MU)
     ap.add_argument("--nvidia", default=DEFAULT_NV)
     ap.add_argument("--no-nvidia", action="store_true", help="엔비디아 특징 제외(마이크론만)")
+    # 추가 선행지표(로컬 경로가 있으면 특징으로 사용, 없으면 건너뜀)
+    ap.add_argument("--tsmc")
+    ap.add_argument("--amd")
+    ap.add_argument("--wdc")
+    ap.add_argument("--soxx")
+    ap.add_argument("--usdkrw")
     ap.add_argument("--lam", type=float, default=1.0, help="릿지(L2) 세기")
     ap.add_argument("--step", type=int, default=10, help="워크포워드 재학습 간격(일)")
     args = ap.parse_args()
@@ -261,6 +287,13 @@ def main():
                 feeds.append(("엔비디아", load_series(args.nvidia)))
             except Exception:
                 print("  (엔비디아 데이터를 불러오지 못해 마이크론만 사용합니다)")
+        for path, nm in [(args.tsmc, "TSMC"), (args.amd, "AMD"), (args.wdc, "WDC"),
+                         (args.soxx, "SOX"), (args.usdkrw, "원/달러")]:
+            if path:
+                try:
+                    feeds.append((nm, load_series(path)))
+                except Exception:
+                    print("  (%s 데이터를 불러오지 못해 건너뜁니다)" % nm)
     except Exception as e:
         sys.exit("데이터 로드 실패: %s\n  (네트워크 차단 시 로컬 JSON 경로를 넘기세요)" % e)
 
@@ -303,6 +336,9 @@ def main():
     verdict = "베이스라인 대비 우위 있음" if edge > 1.0 else \
               ("사실상 베이스라인 수준(실질 예측력 미미)" if edge > -1.0 else "베이스라인보다 못함")
     print("  → 최고 베이스라인 대비 %+.1f%%p : %s" % (edge, verdict))
+    print("  · 선택적 예측(고신뢰 60%↑일만)")
+    print("      고신뢰 방향적중    %5.1f%%" % (s["acc_conf"] * 100))
+    print("      고신뢰 예측일 비중 %5.1f%%" % (s["coverage"] * 100))
 
     # 다음 거래일 예측
     nf = next_features(hy, feeds)
@@ -315,7 +351,8 @@ def main():
         p_up = sigmoid(dot(gam, xs))
         last_hy = hyc[-1]
         pred_close = last_hy * math.exp(pred_ret)
-        arrow = "▲ 상승" if p_up >= 0.5 else "▼ 하락"
+        confident = abs(p_up - 0.5) >= 0.10   # 60%↑ 확신
+        arrow = ("▲ 상승" if p_up >= 0.5 else "▼ 하락") if confident else "― 관망(확신 부족)"
         print("  최근 하이닉스 종가: %s" % fmt_krw(last_hy))
         print("  상승 확률(로지스틱): %.1f%%  →  %s" % (p_up * 100, arrow))
         print("  예상 수익률(회귀):  %+.2f%%" % (pred_ret * 100))
