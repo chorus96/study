@@ -443,6 +443,13 @@
       <div class="pred-stats" id="pred-stats"></div>
       <p class="pred-note" id="pred-note">불러오는 중…</p>
     </section>
+
+    <!-- 날짜별 예측 vs 실제 (표본외 워크포워드) -->
+    <section class="card chart-card" id="predchart-card" hidden>
+      <div class="chart-head"><h3>예측 vs 실제 수익률 (표본외)</h3><span class="seg-lbl" id="predchart-sub">1일 앞 예측</span></div>
+      <div class="legend" id="predchart-legend"></div>
+      <div class="chart-box"><div id="tip-predchart" class="tip"></div><svg id="chart-predchart" viewBox="0 0 340 210" preserveAspectRatio="none" role="img" aria-label="예측 대 실제 수익률 차트"></svg></div>
+    </section>
   </div><!-- /view-predict -->
 
 </div>
@@ -1558,7 +1565,7 @@
       const gam = _logistic(Xs, ytr.map(v => v > 0 ? 1 : 0), lam, 25);
       for (let j = i; j < Math.min(i + step, n); j++) {
         const xs = _applyScaler([X[j]], sc)[0];
-        oos.push([_dot(beta, xs), _sig(_dot(gam, xs)), y[j], X[j][0], prevy[j]]);
+        oos.push([_dot(beta, xs), _sig(_dot(gam, xs)), y[j], X[j][0], prevy[j], j]);
       }
     }
     return oos;
@@ -1587,6 +1594,74 @@
     document.getElementById("pred-base").textContent = "–";
     document.getElementById("pred-stats").innerHTML = "";
     document.getElementById("pred-note").textContent = msg;
+  }
+
+  /* ---------- 날짜별 예측 vs 실제 (표본외) 차트 ---------- */
+  let predChartRows = null;
+  function buildPredLegend() {
+    document.getElementById("predchart-legend").innerHTML =
+      `<span class="lg"><span class="sw" style="background:${cssv("--ink-2")}"></span>실제</span>`
+      + `<span class="lg"><span class="sw" style="background:${cssv("--warn")}"></span>예측</span>`;
+  }
+  function drawPredChart(rows) {
+    buildPredLegend();
+    const svg = document.getElementById("chart-predchart");
+    const W = 340, H = 210, PAD = { l: 30, r: 8, t: 10, b: 20 }, n = rows.length;
+    if (!n) { svg.innerHTML = ""; return; }
+    let m = 0;
+    rows.forEach(r => { m = Math.max(m, Math.abs(r.actual), Math.abs(r.pred)); });
+    m = m || 1;
+    const lo = -m, hi = m;   // 0 중심 대칭
+    const x = i => PAD.l + (n <= 1 ? 0 : (i / (n - 1)) * (W - PAD.l - PAD.r));
+    const y = v => PAD.t + (1 - (v - lo) / (hi - lo)) * (H - PAD.t - PAD.b);
+    const pathOf = key => rows.map((r, i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(r[key]).toFixed(1)).join(" ");
+    const cA = cssv("--ink-2"), cP = cssv("--warn"), cG = cssv("--border"), cM = cssv("--muted");
+    let g = "";
+    [hi, 0, lo].forEach(t => {
+      g += `<line x1="${PAD.l}" y1="${y(t).toFixed(1)}" x2="${W - PAD.r}" y2="${y(t).toFixed(1)}" stroke="${cG}" stroke-width="${t === 0 ? 0.8 : 0.5}"/>`;
+      g += `<text x="2" y="${(y(t) + 2.5).toFixed(1)}" font-size="7" fill="${cM}">${(t >= 0 ? "+" : "") + t.toFixed(1)}</text>`;
+    });
+    g += `<text x="${PAD.l}" y="${H - 6}" font-size="7" fill="${cM}">${rows[0].date}</text>`;
+    g += `<text x="${W - PAD.r}" y="${H - 6}" font-size="7" fill="${cM}" text-anchor="end">${rows[n - 1].date}</text>`;
+    svg.innerHTML = g
+      + `<path d="${pathOf("actual")}" fill="none" stroke="${cA}" stroke-width="1.1"/>`
+      + `<path d="${pathOf("pred")}" fill="none" stroke="${cP}" stroke-width="1.4"/>`
+      + `<line id="pc-cross" x1="0" y1="${PAD.t}" x2="0" y2="${H - PAD.b}" stroke="${cM}" stroke-width="0.7" opacity="0"/>`
+      + `<circle id="pc-mA" r="2.4" fill="${cA}" opacity="0"/>`
+      + `<circle id="pc-mP" r="2.4" fill="${cP}" opacity="0"/>`
+      + `<rect id="pc-ov" x="0" y="0" width="${W}" height="${H}" fill="transparent"/>`;
+    attachPredHover(svg, rows, { W, n, x, y });
+  }
+  function attachPredHover(svg, rows, meta) {
+    const tip = document.getElementById("tip-predchart");
+    const cross = svg.querySelector("#pc-cross"), mA = svg.querySelector("#pc-mA"), mP = svg.querySelector("#pc-mP");
+    const show = ev => {
+      const rect = svg.getBoundingClientRect();
+      const cx = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
+      const frac = (cx / rect.width * meta.W - 30) / ((meta.W - 38) || 1);
+      const i = Math.max(0, Math.min(meta.n - 1, Math.round(frac * (meta.n - 1))));
+      const r = rows[i], xx = meta.x(i);
+      cross.setAttribute("x1", xx); cross.setAttribute("x2", xx); cross.setAttribute("opacity", .7);
+      mA.setAttribute("cx", xx); mA.setAttribute("cy", meta.y(r.actual)); mA.setAttribute("opacity", 1);
+      mP.setAttribute("cx", xx); mP.setAttribute("cy", meta.y(r.pred)); mP.setAttribute("opacity", 1);
+      const hit = (r.actual >= 0) === (r.pred >= 0), err = r.actual - r.pred;
+      let html = `<div class="tdate">${r.date}</div>`;
+      html += trow(cssv("--ink-2"), "실제", (r.actual >= 0 ? "+" : "") + r.actual.toFixed(2) + "%");
+      html += trow(cssv("--warn"), "예측", (r.pred >= 0 ? "+" : "") + r.pred.toFixed(2) + "%");
+      html += trow(cssv("--muted"), "오차", (err >= 0 ? "+" : "") + err.toFixed(2) + "%p");
+      html += trow(hit ? cssv("--up") : cssv("--down"), "방향", hit ? "적중" : "빗나감");
+      tip.innerHTML = html;
+      const leftPx = (xx / meta.W) * rect.width;
+      tip.style.left = Math.max(70, Math.min(rect.width - 70, leftPx)) + "px";
+      tip.style.top = "6px"; tip.style.opacity = 1;
+      if (ev.cancelable && ev.touches) ev.preventDefault();
+    };
+    const hide = () => { cross.setAttribute("opacity", 0); mA.setAttribute("opacity", 0); mP.setAttribute("opacity", 0); tip.style.opacity = 0; };
+    const ov = svg.querySelector("#pc-ov");
+    ov.addEventListener("mousemove", show); ov.addEventListener("mouseleave", hide);
+    ov.addEventListener("touchstart", show, { passive: false });
+    ov.addEventListener("touchmove", show, { passive: false });
+    ov.addEventListener("touchend", hide);
   }
 
   async function renderPrediction() {
@@ -1648,6 +1723,15 @@
       + `베이스라인 — 항상 같은 방향 ${pct(s.baseUp)} · 하이닉스 모멘텀 ${pct(s.baseMom)} · 미국 신호 그대로 ${pct(s.baseUS)}. `
       + `<b>최고 베이스라인 대비 ${edge >= 0 ? "+" : ""}${edge.toFixed(1)}%p → ${verdict}.</b> `
       + `일간 예측의 R²는 원래 낮은 것이 정상이며, 학습·연구용 참고 지표이고 투자 자문이 아닙니다.`;
+
+    // 날짜별 예측 vs 실제(표본외) 차트 — 최근 구간만 표시해 가독성 유지
+    const PCVIEW = 250;
+    const allRows = oos.map(o => ({ date: dates[o[5]], actual: o[2] * 100, pred: o[0] * 100 }));
+    predChartRows = allRows.slice(-PCVIEW);
+    document.getElementById("predchart-sub").textContent =
+      "1일 앞 예측 · 표본외 최근 " + predChartRows.length + "일";
+    drawPredChart(predChartRows);
+    document.getElementById("predchart-card").hidden = false;
   }
 
   /* ---------- 종목 선택 (실시간 우선, 없으면 예시 폴백) ---------- */
@@ -1709,7 +1793,7 @@
   (async function init() {
     await selectStock(curStock);
     // 테마 토글 시 색상 재적용
-    const mo = new MutationObserver(() => { if (currentA) render(currentA); if (curFund) drawPer(curFund); if (curFin) drawBars(curFin); if (tfData.week) { buildTFLegend(TF.week); drawTFChart(TF.week); } if (tfData.month) { buildTFLegend(TF.month); drawTFChart(TF.month); } });
+    const mo = new MutationObserver(() => { if (currentA) render(currentA); if (curFund) drawPer(curFund); if (curFin) drawBars(curFin); if (tfData.week) { buildTFLegend(TF.week); drawTFChart(TF.week); } if (tfData.month) { buildTFLegend(TF.month); drawTFChart(TF.month); } if (predChartRows) drawPredChart(predChartRows); });
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   })();
 })();
