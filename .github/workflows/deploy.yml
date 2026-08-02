@@ -53,6 +53,11 @@ jobs:
           path: |
             stock-analyzer/micron/data.json
             stock-analyzer/nvidia/data.json
+            stock-analyzer/tsmc/data.json
+            stock-analyzer/amd/data.json
+            stock-analyzer/wdc/data.json
+            stock-analyzer/soxx/data.json
+            stock-analyzer/usdkrw/data.json
             stock-analyzer/hynix/fundamentals.json
             stock-analyzer/samsung/fundamentals.json
             stock-analyzer/micron/fundamentals.json
@@ -147,6 +152,88 @@ jobs:
           NAME: 'NH투자증권'
           RANGE: '5y'
           OUT: 'stock-analyzer/nh/data.json'
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+
+      # ── 예측 선행지표(가격만): US 반도체 바스켓 + 원/달러 환율. 실패해도 배포 진행.
+      #    대시보드 예측 탭에서 있으면 특징으로 사용하고, 없으면 자동으로 건너뛴다. ──
+      - name: Fetch TSMC price data
+        continue-on-error: true
+        run: bash scripts/fetch_stock.sh
+        env:
+          SYMBOL: 'TSM'
+          NUMCODE: 'TSM'
+          NAME: 'TSMC'
+          MARKET: 'us'
+          CURRENCY: 'USD'
+          STOOQ_S: 'tsm.us'
+          SYMLABEL: 'TSM'
+          RANGE: '5y'
+          OUT: 'stock-analyzer/tsmc/data.json'
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+
+      - name: Fetch AMD price data
+        continue-on-error: true
+        run: bash scripts/fetch_stock.sh
+        env:
+          SYMBOL: 'AMD'
+          NUMCODE: 'AMD'
+          NAME: 'AMD'
+          MARKET: 'us'
+          CURRENCY: 'USD'
+          STOOQ_S: 'amd.us'
+          SYMLABEL: 'AMD'
+          RANGE: '5y'
+          OUT: 'stock-analyzer/amd/data.json'
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+
+      - name: Fetch Western Digital price data
+        continue-on-error: true
+        run: bash scripts/fetch_stock.sh
+        env:
+          SYMBOL: 'WDC'
+          NUMCODE: 'WDC'
+          NAME: 'Western Digital'
+          MARKET: 'us'
+          CURRENCY: 'USD'
+          STOOQ_S: 'wdc.us'
+          SYMLABEL: 'WDC'
+          RANGE: '5y'
+          OUT: 'stock-analyzer/wdc/data.json'
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+
+      - name: Fetch SOXX (semiconductor index ETF) price data
+        continue-on-error: true
+        run: bash scripts/fetch_stock.sh
+        env:
+          SYMBOL: 'SOXX'
+          NUMCODE: 'SOXX'
+          NAME: 'SOX 반도체지수(ETF)'
+          MARKET: 'us'
+          CURRENCY: 'USD'
+          STOOQ_S: 'soxx.us'
+          SYMLABEL: 'SOXX'
+          RANGE: '5y'
+          OUT: 'stock-analyzer/soxx/data.json'
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+
+      - name: Fetch USD/KRW FX data
+        continue-on-error: true
+        run: bash scripts/fetch_stock.sh
+        env:
+          SYMBOL: 'KRW=X'
+          NUMCODE: 'USDKRW'
+          NAME: '원/달러 환율'
+          MARKET: 'us'
+          CURRENCY: 'KRW'
+          STOOQ_S: 'usdkrw'
+          SYMLABEL: 'USDKRW'
+          RANGE: '5y'
+          OUT: 'stock-analyzer/usdkrw/data.json'
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
 
@@ -380,6 +467,11 @@ jobs:
           path: |
             stock-analyzer/micron/data.json
             stock-analyzer/nvidia/data.json
+            stock-analyzer/tsmc/data.json
+            stock-analyzer/amd/data.json
+            stock-analyzer/wdc/data.json
+            stock-analyzer/soxx/data.json
+            stock-analyzer/usdkrw/data.json
             stock-analyzer/hynix/fundamentals.json
             stock-analyzer/samsung/fundamentals.json
             stock-analyzer/micron/fundamentals.json
