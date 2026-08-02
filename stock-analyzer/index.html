@@ -444,6 +444,13 @@
       <p class="pred-note" id="pred-note">불러오는 중…</p>
     </section>
 
+    <!-- 최근 1개월 예측 vs 실제 캔들(표본외) -->
+    <section class="card chart-card" id="candle-card" hidden>
+      <div class="chart-head"><h3>예측 vs 실제 캔들 (표본외)</h3><span class="seg-lbl" id="candle-sub">최근 1개월</span></div>
+      <div class="legend" id="candle-legend"></div>
+      <div class="chart-box"><div id="tip-candle" class="tip"></div><svg id="chart-candle" viewBox="0 0 340 220" preserveAspectRatio="none" role="img" aria-label="예측 대 실제 캔들 차트"></svg></div>
+    </section>
+
     <!-- 날짜별 예측 vs 실제 (표본외 워크포워드) -->
     <section class="card chart-card" id="predchart-card" hidden>
       <div class="chart-head"><h3>예측 vs 실제 수익률 (표본외)</h3><span class="seg-lbl" id="predchart-sub">1일 앞 예측</span></div>
@@ -1544,7 +1551,7 @@
   function _buildAligned(hyPts, feeds) {
     const hy = hyPts.slice().filter(p => isFinite(p.t) && isFinite(p.c) && p.c > 0).sort((a, b) => a.t - b.t);
     const us0 = feeds[0];   // 미국 세션 기준 피드(마이크론)
-    const X = [], y = [], dates = [], hyc = [], prevy = [], usFresh = [], gap = [];
+    const X = [], y = [], dates = [], hyc = [], prevy = [], usFresh = [], gap = [], hopen = [], prevc = [];
     for (let i = 1; i < hy.length; i++) {
       const t0 = hy[i - 1].t, t1 = hy[i].t, feats = []; let ok = true;
       for (const f of feeds) {
@@ -1556,14 +1563,17 @@
       X.push(feats); y.push(Math.log(hy[i].c / hy[i - 1].c));
       dates.push(new Date(t1 * 1000).toISOString().slice(0, 10));
       hyc.push(hy[i].c); prevy.push(y.length >= 2 ? y[y.length - 2] : 0);
+      prevc.push(hy[i - 1].c);
       // 두 하이닉스 종가 사이에 새 미국 세션이 마감됐는가(= 전날 미국장이 열렸는가).
       // 같은 미국 종가를 재사용하면(개수 동일) 전날 미국장 휴장으로 본다.
       usFresh.push(_countBefore(us0.ts, t1) > _countBefore(us0.ts, t0));
-      // 밤사이 갭(전일 종가→당일 시가) — 시가(o)가 있을 때만. 없으면 null.
+      // 밤사이 갭(전일 종가→당일 시가) 및 실제 시가 — 시가(o)가 있을 때만. 없으면 null.
       const op = hy[i].o;
-      gap.push((isFinite(op) && op > 0) ? Math.log(op / hy[i - 1].c) : null);
+      const hasOpen = isFinite(op) && op > 0;
+      gap.push(hasOpen ? Math.log(op / hy[i - 1].c) : null);
+      hopen.push(hasOpen ? op : null);
     }
-    return { X, y, dates, hyc, prevy, usFresh, gap };
+    return { X, y, dates, hyc, prevy, usFresh, gap, hopen, prevc };
   }
   function _nextFeatures(hyPts, feeds) {
     const hy = hyPts.slice().filter(p => isFinite(p.t) && isFinite(p.c) && p.c > 0).sort((a, b) => a.t - b.t);
@@ -1575,16 +1585,24 @@
     }
     return feats;
   }
-  function _walkForward(X, y, prevy, lam, init, step) {
+  function _walkForward(X, y, prevy, lam, init, step, gap) {
     const n = X.length, oos = [];
     for (let i = Math.max(init, step); i < n; i += step) {
       const Xtr = X.slice(0, i), ytr = y.slice(0, i);
       const sc = _fitScaler(Xtr), Xs = _applyScaler(Xtr, sc);
       const beta = _olsRidge(Xs, ytr, lam);
       const gam = _logistic(Xs, ytr.map(v => v > 0 ? 1 : 0), lam, 25);
+      // 밤사이 갭 모델 — 학습창 내 시가 보유 표본으로 학습(부족하면 null)
+      let gBeta = null;
+      if (gap) {
+        const gi = [];
+        for (let k = 0; k < i; k++) if (gap[k] != null && isFinite(gap[k])) gi.push(k);
+        if (gi.length >= 60) gBeta = _olsRidge(gi.map(k => Xs[k]), gi.map(k => gap[k]), lam);
+      }
       for (let j = i; j < Math.min(i + step, n); j++) {
         const xs = _applyScaler([X[j]], sc)[0];
-        oos.push([_dot(beta, xs), _sig(_dot(gam, xs)), y[j], X[j][0], prevy[j], j]);
+        oos.push([_dot(beta, xs), _sig(_dot(gam, xs)), y[j], X[j][0], prevy[j], j,
+                  gBeta ? _dot(gBeta, xs) : null]);
       }
     }
     return oos;
@@ -1689,6 +1707,81 @@
     ov.addEventListener("touchend", hide);
   }
 
+  /* ---------- 최근 1개월 예측 vs 실제 캔들 차트 ---------- */
+  let candleRows = null;
+  function buildCandleLegend() {
+    document.getElementById("candle-legend").innerHTML =
+      `<span class="lg"><span class="sw" style="background:${cssv("--up")}"></span>상승</span>`
+      + `<span class="lg"><span class="sw" style="background:${cssv("--down")}"></span>하락</span>`
+      + `<span class="lg" style="color:var(--muted)">채움=실제 · 테두리=예측</span>`;
+  }
+  function drawCandleChart(rows) {
+    buildCandleLegend();
+    const svg = document.getElementById("chart-candle");
+    const W = 340, H = 220, PAD = { l: 40, r: 8, t: 10, b: 24 }, n = rows.length;
+    if (!n) { svg.innerHTML = ""; return; }
+    let lo = Infinity, hi = -Infinity;
+    rows.forEach(r => [r.aOpen, r.aClose, r.pOpen, r.pClose].forEach(v => { if (isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }));
+    if (!isFinite(lo) || !isFinite(hi) || hi <= lo) { svg.innerHTML = ""; return; }
+    const padv = (hi - lo) * 0.06 || 1; lo -= padv; hi += padv;
+    const plotW = W - PAD.l - PAD.r, plotH = H - PAD.t - PAD.b, slotW = plotW / n;
+    const xc = i => PAD.l + slotW * (i + 0.5);
+    const y = v => PAD.t + (1 - (v - lo) / (hi - lo)) * plotH;
+    const cw = Math.max(2.2, Math.min(7, slotW * 0.34));
+    const up = cssv("--up"), dn = cssv("--down"), cG = cssv("--border"), cM = cssv("--muted");
+    let g = "";
+    for (let k = 0; k <= 3; k++) {
+      const v = lo + (hi - lo) * k / 3, yy = y(v);
+      g += `<line x1="${PAD.l}" y1="${yy.toFixed(1)}" x2="${W - PAD.r}" y2="${yy.toFixed(1)}" stroke="${cG}" stroke-width="0.5"/>`;
+      g += `<text x="2" y="${(yy + 2.5).toFixed(1)}" font-size="7" fill="${cM}">${Math.round(v).toLocaleString("ko-KR")}</text>`;
+    }
+    [0, Math.floor((n - 1) / 2), n - 1].forEach((i, k) => {
+      const anchor = k === 0 ? "start" : k === 2 ? "end" : "middle";
+      g += `<text x="${xc(i).toFixed(1)}" y="${H - 8}" font-size="7" fill="${cM}" text-anchor="${anchor}">${rows[i].date.slice(5)}</text>`;
+    });
+    const body = (x, o, c, filled) => {
+      const col = (c >= o) ? up : dn, top = y(Math.max(o, c)), h = Math.max(1, Math.abs(y(o) - y(c)));
+      return filled
+        ? `<rect x="${x.toFixed(2)}" y="${top.toFixed(2)}" width="${cw.toFixed(2)}" height="${h.toFixed(2)}" fill="${col}" opacity="0.92"/>`
+        : `<rect x="${x.toFixed(2)}" y="${top.toFixed(2)}" width="${cw.toFixed(2)}" height="${h.toFixed(2)}" fill="none" stroke="${col}" stroke-width="1.1" vector-effect="non-scaling-stroke"/>`;
+    };
+    let cndl = "";
+    rows.forEach((r, i) => {
+      const c = xc(i), predX = c - 1 - cw, actX = c + 1;
+      if (isFinite(r.pOpen) && isFinite(r.pClose)) cndl += body(predX, r.pOpen, r.pClose, false);
+      if (isFinite(r.aOpen) && isFinite(r.aClose)) cndl += body(actX, r.aOpen, r.aClose, true);
+    });
+    svg.innerHTML = g + cndl
+      + `<line id="cd-cross" x1="0" y1="${PAD.t}" x2="0" y2="${H - PAD.b}" stroke="${cM}" stroke-width="0.7" opacity="0"/>`
+      + `<rect id="cd-ov" x="0" y="0" width="${W}" height="${H}" fill="transparent"/>`;
+    attachCandleHover(svg, rows, { W, n, xc, PAD });
+  }
+  function attachCandleHover(svg, rows, meta) {
+    const tip = document.getElementById("tip-candle"), cross = svg.querySelector("#cd-cross");
+    const show = ev => {
+      const rect = svg.getBoundingClientRect();
+      const cx = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
+      const frac = (cx / rect.width * meta.W - meta.PAD.l) / ((meta.W - meta.PAD.l - meta.PAD.r) || 1);
+      const i = Math.max(0, Math.min(meta.n - 1, Math.round(frac * (meta.n - 1))));
+      const r = rows[i], xx = meta.xc(i), fmt = v => isFinite(v) ? Math.round(v).toLocaleString("ko-KR") : "–";
+      cross.setAttribute("x1", xx); cross.setAttribute("x2", xx); cross.setAttribute("opacity", .7);
+      let html = `<div class="tdate">${r.date}</div>`;
+      html += trow(cssv("--ink-2"), "실제 시→종", fmt(r.aOpen) + " → " + fmt(r.aClose));
+      html += trow(cssv("--warn"), "예측 시→종", fmt(r.pOpen) + " → " + fmt(r.pClose));
+      tip.innerHTML = html;
+      const leftPx = (xx / meta.W) * rect.width;
+      tip.style.left = Math.max(78, Math.min(rect.width - 78, leftPx)) + "px";
+      tip.style.top = "6px"; tip.style.opacity = 1;
+      if (ev.cancelable && ev.touches) ev.preventDefault();
+    };
+    const hide = () => { cross.setAttribute("opacity", 0); tip.style.opacity = 0; };
+    const ov = svg.querySelector("#cd-ov");
+    ov.addEventListener("mousemove", show); ov.addEventListener("mouseleave", hide);
+    ov.addEventListener("touchstart", show, { passive: false });
+    ov.addEventListener("touchmove", show, { passive: false });
+    ov.addEventListener("touchend", hide);
+  }
+
   async function renderPrediction() {
     document.getElementById("pred-note").textContent = "불러오는 중…";
     const [hy, mu, nv] = await Promise.all([loadLive("hynix"), loadLive("micron"), loadLive("nvidia")]);
@@ -1696,7 +1789,7 @@
     const feeds = [{ name: "마이크론", ...(_prepFeed(mu.pts)) }];
     if (nv && nv.pts && nv.pts.length > 30) feeds.push({ name: "엔비디아", ...(_prepFeed(nv.pts)) });
 
-    const { X, y, dates, hyc, prevy, usFresh, gap } = _buildAligned(hy.pts, feeds);
+    const { X, y, dates, hyc, prevy, usFresh, gap, hopen, prevc } = _buildAligned(hy.pts, feeds);
     if (X.length < 120) { predMsg("공통 거래일이 부족해 예측할 수 없습니다."); return; }
 
     // 전체 데이터 최종 모델(다음 거래일용)
@@ -1709,7 +1802,7 @@
     const gapBeta = gIdx.length >= 60 ? _olsRidge(gIdx.map(i => Xs[i]), gIdx.map(i => gap[i]), LAM) : null;
 
     // 워크포워드 표본외 평가
-    const oos = _walkForward(X, y, prevy, LAM, Math.max(120, Math.floor(X.length * 0.5)), WF_STEP);
+    const oos = _walkForward(X, y, prevy, LAM, Math.max(120, Math.floor(X.length * 0.5)), WF_STEP, gap);
     const s = _summarize(oos);
 
     // 다음 거래일 예측
@@ -1774,6 +1867,25 @@
       "전날 미국장 휴장 제외 · " + predChart2Rows.length + "일(제외 " + excluded + "일)";
     drawPredChart(predChart2Rows, PC2);
     document.getElementById("predchart2-card").hidden = false;
+
+    // 최근 1개월(약 22거래일) 예측 vs 실제 캔들 — 시가·갭 예측이 있을 때만
+    const CANDLE_DAYS = 22;
+    const cAll = [];
+    for (const o of oos) {
+      const j = o[5], pg = o[6], pc = prevc[j], ao = hopen[j], ac = hyc[j];
+      if (pc > 0 && isFinite(ao) && ao > 0 && pg != null && isFinite(pg)) {
+        cAll.push({ date: dates[j], aOpen: ao, aClose: ac, pOpen: pc * Math.exp(pg), pClose: pc * Math.exp(o[0]) });
+      }
+    }
+    candleRows = cAll.slice(-CANDLE_DAYS);
+    if (candleRows.length >= 5) {
+      document.getElementById("candle-sub").textContent = "표본외 최근 " + candleRows.length + "거래일 · 채움=실제/테두리=예측";
+      drawCandleChart(candleRows);
+      document.getElementById("candle-card").hidden = false;
+    } else {
+      candleRows = null;
+      document.getElementById("candle-card").hidden = true;   // 시가 데이터 부족
+    }
   }
 
   /* ---------- 종목 선택 (실시간 우선, 없으면 예시 폴백) ---------- */
@@ -1835,7 +1947,7 @@
   (async function init() {
     await selectStock(curStock);
     // 테마 토글 시 색상 재적용
-    const mo = new MutationObserver(() => { if (currentA) render(currentA); if (curFund) drawPer(curFund); if (curFin) drawBars(curFin); if (tfData.week) { buildTFLegend(TF.week); drawTFChart(TF.week); } if (tfData.month) { buildTFLegend(TF.month); drawTFChart(TF.month); } if (predChartRows) drawPredChart(predChartRows, PC1); if (predChart2Rows) drawPredChart(predChart2Rows, PC2); });
+    const mo = new MutationObserver(() => { if (currentA) render(currentA); if (curFund) drawPer(curFund); if (curFin) drawBars(curFin); if (tfData.week) { buildTFLegend(TF.week); drawTFChart(TF.week); } if (tfData.month) { buildTFLegend(TF.month); drawTFChart(TF.month); } if (predChartRows) drawPredChart(predChartRows, PC1); if (predChart2Rows) drawPredChart(predChart2Rows, PC2); if (candleRows) drawCandleChart(candleRows); });
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   })();
 })();
