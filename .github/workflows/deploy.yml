@@ -44,13 +44,18 @@ jobs:
         uses: actions/checkout@v4
 
       # 직전 성공 데이터를 캐시에서 복원한다.
-      #  - 미국 시세(Yahoo 간헐적 429) 대비 마지막 성공분
+      #  - 미국 시세(Yahoo 간헐적 429) 및 국내(KRX) 시세(네이버 간헐적 지연/차단)
+      #    대비 마지막 성공분 — 소스 장애 시 직전 값으로 버텨 데이터가 사라지지 않게.
       #  - PER·영업이익(분기 데이터): 4시간마다만 갱신하므로 10분 실행에서는
       #    캐시에 담긴 직전 값을 복원해 그대로 배포한다(카드가 사라지지 않게).
       - name: Restore cached market data
         uses: actions/cache/restore@v4
         with:
           path: |
+            stock-analyzer/hynix/data.json
+            stock-analyzer/samsung/data.json
+            stock-analyzer/kb/data.json
+            stock-analyzer/nh/data.json
             stock-analyzer/micron/data.json
             stock-analyzer/nvidia/data.json
             stock-analyzer/tsmc/data.json
@@ -473,6 +478,10 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: |
+            stock-analyzer/hynix/data.json
+            stock-analyzer/samsung/data.json
+            stock-analyzer/kb/data.json
+            stock-analyzer/nh/data.json
             stock-analyzer/micron/data.json
             stock-analyzer/nvidia/data.json
             stock-analyzer/tsmc/data.json
