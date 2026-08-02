@@ -1796,7 +1796,9 @@
   async function renderPrediction() {
     document.getElementById("pred-note").textContent = "불러오는 중…";
     // 추가 선행지표(있으면 특징에 포함): US 반도체 바스켓 + 원/달러 환율
-    const EXTRA = [["nvidia", "엔비디아"], ["tsmc", "TSMC"], ["amd", "AMD"], ["wdc", "WDC"], ["soxx", "SOX"], ["usdkrw", "원/달러"]];
+    // 원/달러(usdkrw)는 데이터는 수집하되, 예측 기여가 미미하고 표본(공통일)을
+    // 줄여 성능을 오히려 낮춰 특징에서 제외한다.
+    const EXTRA = [["nvidia", "엔비디아"], ["tsmc", "TSMC"], ["amd", "AMD"], ["wdc", "WDC"], ["soxx", "SOX"]];
     const [hy, mu, ...extra] = await Promise.all([
       loadLive("hynix"), loadLive("micron"), ...EXTRA.map(e => loadLive(e[0]))]);
     if (!hy || !hy.pts || !mu || !mu.pts) { predMsg("실시간 데이터를 불러오지 못했습니다. 잠시 후 새로고침해 주세요."); return; }
