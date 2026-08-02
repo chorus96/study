@@ -64,8 +64,8 @@ if [ "$MARKET" != "krx" ]; then
           .chart.result[0] as $r
           | { symbol: $r.meta.symbol, name: $name, currency: $r.meta.currency,
               price: $r.meta.regularMarketPrice, marketTime: $r.meta.regularMarketTime, updated: $updated,
-              points: ([ $r.timestamp, $r.indicators.quote[0].close ]
-                       | transpose | map(select(.[1] != null) | { t: .[0], c: .[1] })) }' "$tmp" > "$OUT"
+              points: ([ $r.timestamp, $r.indicators.quote[0].close, $r.indicators.quote[0].open ]
+                       | transpose | map(select(.[1] != null) | { t: .[0], c: .[1], o: (.[2] // .[1]) })) }' "$tmp" > "$OUT"
         ok=1; echo "→ 성공: Yahoo Finance (${host}, 시도 ${try})"; break
       fi
     done
@@ -91,7 +91,7 @@ except Exception as ex:
 pts = []
 for r in rows[1:]:                        # rows[0]은 헤더
     try:
-        d = str(r[0]); c = float(r[4])    # [날짜,시가,고가,저가,종가,거래량,...]
+        d = str(r[0]); c = float(r[4]); o = float(r[1])  # [날짜,시가,고가,저가,종가,거래량,...]
     except (IndexError, ValueError, TypeError):
         continue
     if len(d) != 8:
@@ -99,7 +99,7 @@ for r in rows[1:]:                        # rows[0]은 헤더
     t = int(datetime.datetime.strptime(d, "%Y%m%d")
             .replace(tzinfo=datetime.timezone.utc).timestamp())
     if c > 0:
-        pts.append({"t": t, "c": c})
+        pts.append({"t": t, "c": c, "o": o if o > 0 else c})
 pts = pts[-int(maxpts):]
 if len(pts) < 5:
     sys.exit("Naver 데이터 부족")
@@ -123,12 +123,12 @@ rows = []
 with open(src, newline="") as f:
     for row in csv.DictReader(f):
         try:
-            d = row["Date"]; c = float(row["Close"])
+            d = row["Date"]; c = float(row["Close"]); o = float(row.get("Open") or c)
         except (KeyError, ValueError):
             continue
         t = int(datetime.datetime.strptime(d, "%Y-%m-%d")
                 .replace(tzinfo=datetime.timezone.utc).timestamp())
-        rows.append({"t": t, "c": c})
+        rows.append({"t": t, "c": c, "o": o if o > 0 else c})
 rows = rows[-int(maxpts):]
 if len(rows) < 5:
     sys.exit("Stooq: 데이터 부족")
@@ -161,9 +161,9 @@ if df is None or df.empty:
 points = []
 for idx, row in df.iterrows():
     d = idx.to_pydatetime().replace(tzinfo=datetime.timezone.utc)
-    c = float(row["종가"])
+    c = float(row["종가"]); o = float(row["시가"])
     if c > 0:
-        points.append({"t": int(d.timestamp()), "c": c})
+        points.append({"t": int(d.timestamp()), "c": c, "o": o if o > 0 else c})
 points = points[-int(maxpts):]
 if len(points) < 5:
     sys.exit("pykrx: 데이터 부족")
@@ -191,21 +191,21 @@ if [ "$ok" -ne 1 ] && [ -n "${TWELVEDATA_API_KEY:-}" ]; then
         price: (.values | last | .close | tonumber),
         marketTime: (.values | last | .datetime | (strptime("%Y-%m-%d") | mktime)),
         updated: $updated,
-        points: [ .values[] | { t: (.datetime | strptime("%Y-%m-%d") | mktime), c: (.close | tonumber) } ] }' "$tmp" > "$OUT"
+        points: [ .values[] | { t: (.datetime | strptime("%Y-%m-%d") | mktime), c: (.close | tonumber), o: (((.open // .close)) | tonumber) } ] }' "$tmp" > "$OUT"
     ok=1; echo "→ 성공: Twelve Data"
   fi
 fi
 
 # ---------- 5) Financial Modeling Prep (무료 API 키) ----------
 if [ "$ok" -ne 1 ] && [ -n "${FMP_API_KEY:-}" ]; then
-  code=$(fetch "FMP" "https://financialmodelingprep.com/api/v3/historical-price-full/${SYMBOL}?serietype=line&apikey=${FMP_API_KEY}")
+  code=$(fetch "FMP" "https://financialmodelingprep.com/api/v3/historical-price-full/${SYMBOL}?apikey=${FMP_API_KEY}")
   if [ "$code" = "200" ] && jq -e '.historical and (.historical|length>0)' "$tmp" >/dev/null 2>&1; then
     jq --arg name "$NAME" --arg updated "$UPDATED" --arg sym "$SYMLABEL" --arg cur "$CURRENCY" --argjson n "$MAXPTS" '
       { symbol: $sym, name: $name, currency: $cur,
         price: (.historical[0].close),
         marketTime: (.historical[0].date | strptime("%Y-%m-%d") | mktime),
         updated: $updated,
-        points: [ .historical | reverse | .[-$n:][] | { t: (.date | strptime("%Y-%m-%d") | mktime), c: .close } ] }' "$tmp" > "$OUT"
+        points: [ .historical | reverse | .[-$n:][] | { t: (.date | strptime("%Y-%m-%d") | mktime), c: .close, o: (.open // .close) } ] }' "$tmp" > "$OUT"
     ok=1; echo "→ 성공: Financial Modeling Prep"
   fi
 fi
