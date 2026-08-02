@@ -450,6 +450,13 @@
       <div class="legend" id="predchart-legend"></div>
       <div class="chart-box"><div id="tip-predchart" class="tip"></div><svg id="chart-predchart" viewBox="0 0 340 210" preserveAspectRatio="none" role="img" aria-label="예측 대 실제 수익률 차트"></svg></div>
     </section>
+
+    <!-- #2: 전날 미국장 휴장일 제외 -->
+    <section class="card chart-card" id="predchart2-card" hidden>
+      <div class="chart-head"><h3>예측 vs 실제 수익률 (표본외) #2</h3><span class="seg-lbl" id="predchart2-sub">전날 미국장 휴장 제외</span></div>
+      <div class="legend" id="predchart2-legend"></div>
+      <div class="chart-box"><div id="tip-predchart2" class="tip"></div><svg id="chart-predchart2" viewBox="0 0 340 210" preserveAspectRatio="none" role="img" aria-label="예측 대 실제 수익률 차트(미국 휴장 제외)"></svg></div>
+    </section>
   </div><!-- /view-predict -->
 
 </div>
@@ -1529,9 +1536,15 @@
     const s = pts.slice().filter(p => isFinite(p.t) && isFinite(p.c) && p.c > 0).sort((a, b) => a.t - b.t);
     return { ts: s.map(p => p.t), cs: s.map(p => p.c) };
   }
+  function _countBefore(ts, t) {   // ts 오름차순에서 t '미만' 원소 개수
+    let lo = 0, hi = ts.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (ts[m] < t) lo = m + 1; else hi = m; }
+    return lo;
+  }
   function _buildAligned(hyPts, feeds) {
     const hy = hyPts.slice().filter(p => isFinite(p.t) && isFinite(p.c) && p.c > 0).sort((a, b) => a.t - b.t);
-    const X = [], y = [], dates = [], hyc = [], prevy = [];
+    const us0 = feeds[0];   // 미국 세션 기준 피드(마이크론)
+    const X = [], y = [], dates = [], hyc = [], prevy = [], usFresh = [];
     for (let i = 1; i < hy.length; i++) {
       const t0 = hy[i - 1].t, t1 = hy[i].t, feats = []; let ok = true;
       for (const f of feeds) {
@@ -1543,8 +1556,11 @@
       X.push(feats); y.push(Math.log(hy[i].c / hy[i - 1].c));
       dates.push(new Date(t1 * 1000).toISOString().slice(0, 10));
       hyc.push(hy[i].c); prevy.push(y.length >= 2 ? y[y.length - 2] : 0);
+      // 두 하이닉스 종가 사이에 새 미국 세션이 마감됐는가(= 전날 미국장이 열렸는가).
+      // 같은 미국 종가를 재사용하면(개수 동일) 전날 미국장 휴장으로 본다.
+      usFresh.push(_countBefore(us0.ts, t1) > _countBefore(us0.ts, t0));
     }
-    return { X, y, dates, hyc, prevy };
+    return { X, y, dates, hyc, prevy, usFresh };
   }
   function _nextFeatures(hyPts, feeds) {
     const hy = hyPts.slice().filter(p => isFinite(p.t) && isFinite(p.c) && p.c > 0).sort((a, b) => a.t - b.t);
@@ -1597,15 +1613,17 @@
   }
 
   /* ---------- 날짜별 예측 vs 실제 (표본외) 차트 ---------- */
-  let predChartRows = null;
-  function buildPredLegend() {
-    document.getElementById("predchart-legend").innerHTML =
+  let predChartRows = null, predChart2Rows = null;
+  const PC1 = { svg: "chart-predchart", legend: "predchart-legend", tip: "tip-predchart", pfx: "pc1" };
+  const PC2 = { svg: "chart-predchart2", legend: "predchart2-legend", tip: "tip-predchart2", pfx: "pc2" };
+  function buildPredLegend(id) {
+    document.getElementById(id).innerHTML =
       `<span class="lg"><span class="sw" style="background:${cssv("--up")}"></span>방향 적중</span>`
       + `<span class="lg"><span class="sw" style="background:${cssv("--down")}"></span>방향 빗나감</span>`;
   }
-  function drawPredChart(rows) {
-    buildPredLegend();
-    const svg = document.getElementById("chart-predchart");
+  function drawPredChart(rows, C) {
+    buildPredLegend(C.legend);
+    const svg = document.getElementById(C.svg);
     const W = 340, H = 210, PAD = { l: 30, r: 8, t: 10, b: 20 }, n = rows.length;
     if (!n) { svg.innerHTML = ""; return; }
     // 막대 높이 = 그날 '실제' 수익률, 색 = 예측 방향 적중(적)/빗나감(청)
@@ -1633,13 +1651,13 @@
       bars += `<rect x="${(x(i) - bw / 2).toFixed(2)}" y="${top.toFixed(2)}" width="${bw.toFixed(2)}" height="${h.toFixed(2)}" fill="${hit ? cUp : cDn}" opacity="0.9"/>`;
     });
     svg.innerHTML = g + bars
-      + `<line id="pc-cross" x1="0" y1="${PAD.t}" x2="0" y2="${H - PAD.b}" stroke="${cM}" stroke-width="0.7" opacity="0"/>`
-      + `<rect id="pc-ov" x="0" y="0" width="${W}" height="${H}" fill="transparent"/>`;
-    attachPredHover(svg, rows, { W, n, x, y });
+      + `<line id="${C.pfx}-cross" x1="0" y1="${PAD.t}" x2="0" y2="${H - PAD.b}" stroke="${cM}" stroke-width="0.7" opacity="0"/>`
+      + `<rect id="${C.pfx}-ov" x="0" y="0" width="${W}" height="${H}" fill="transparent"/>`;
+    attachPredHover(svg, rows, { W, n, x, y }, C);
   }
-  function attachPredHover(svg, rows, meta) {
-    const tip = document.getElementById("tip-predchart");
-    const cross = svg.querySelector("#pc-cross");
+  function attachPredHover(svg, rows, meta, C) {
+    const tip = document.getElementById(C.tip);
+    const cross = svg.querySelector("#" + C.pfx + "-cross");
     const show = ev => {
       const rect = svg.getBoundingClientRect();
       const cx = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
@@ -1660,7 +1678,7 @@
       if (ev.cancelable && ev.touches) ev.preventDefault();
     };
     const hide = () => { cross.setAttribute("opacity", 0); tip.style.opacity = 0; };
-    const ov = svg.querySelector("#pc-ov");
+    const ov = svg.querySelector("#" + C.pfx + "-ov");
     ov.addEventListener("mousemove", show); ov.addEventListener("mouseleave", hide);
     ov.addEventListener("touchstart", show, { passive: false });
     ov.addEventListener("touchmove", show, { passive: false });
@@ -1674,7 +1692,7 @@
     const feeds = [{ name: "마이크론", ...(_prepFeed(mu.pts)) }];
     if (nv && nv.pts && nv.pts.length > 30) feeds.push({ name: "엔비디아", ...(_prepFeed(nv.pts)) });
 
-    const { X, y, dates, hyc, prevy } = _buildAligned(hy.pts, feeds);
+    const { X, y, dates, hyc, prevy, usFresh } = _buildAligned(hy.pts, feeds);
     if (X.length < 120) { predMsg("공통 거래일이 부족해 예측할 수 없습니다."); return; }
 
     // 전체 데이터 최종 모델(다음 거래일용)
@@ -1733,8 +1751,17 @@
     predChartRows = allRows.slice(-PCVIEW);
     document.getElementById("predchart-sub").textContent =
       "1일 앞 예측 · 표본외 최근 " + predChartRows.length + "일";
-    drawPredChart(predChartRows);
+    drawPredChart(predChartRows, PC1);
     document.getElementById("predchart-card").hidden = false;
+
+    // #2: 전날 미국장이 휴장인 표본(밤사이 신호 없음) 제외
+    const freshRows = oos.filter(o => usFresh[o[5]]).map(o => ({ date: dates[o[5]], actual: o[2] * 100, pred: o[0] * 100 }));
+    predChart2Rows = freshRows.slice(-PCVIEW);
+    const excluded = oos.length - freshRows.length;
+    document.getElementById("predchart2-sub").textContent =
+      "전날 미국장 휴장 제외 · " + predChart2Rows.length + "일(제외 " + excluded + "일)";
+    drawPredChart(predChart2Rows, PC2);
+    document.getElementById("predchart2-card").hidden = false;
   }
 
   /* ---------- 종목 선택 (실시간 우선, 없으면 예시 폴백) ---------- */
@@ -1796,7 +1823,7 @@
   (async function init() {
     await selectStock(curStock);
     // 테마 토글 시 색상 재적용
-    const mo = new MutationObserver(() => { if (currentA) render(currentA); if (curFund) drawPer(curFund); if (curFin) drawBars(curFin); if (tfData.week) { buildTFLegend(TF.week); drawTFChart(TF.week); } if (tfData.month) { buildTFLegend(TF.month); drawTFChart(TF.month); } if (predChartRows) drawPredChart(predChartRows); });
+    const mo = new MutationObserver(() => { if (currentA) render(currentA); if (curFund) drawPer(curFund); if (curFin) drawBars(curFin); if (tfData.week) { buildTFLegend(TF.week); drawTFChart(TF.week); } if (tfData.month) { buildTFLegend(TF.month); drawTFChart(TF.month); } if (predChartRows) drawPredChart(predChartRows, PC1); if (predChart2Rows) drawPredChart(predChart2Rows, PC2); });
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   })();
 })();
