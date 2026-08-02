@@ -182,6 +182,24 @@
   .chip .cstate { font-size: .74rem; font-weight: 700; }
   .st-up { color: var(--up); } .st-down { color: var(--down); } .st-flat { color: var(--flat); } .st-warn { color: var(--warn); }
 
+  /* ---- Micron → Hynix Prediction ---- */
+  .pred-tag { font-size: .62rem; letter-spacing: .06em; font-weight: 700; color: var(--warn); background: var(--surface-2); border: 1px solid var(--border); padding: 2px 7px; border-radius: 8px; margin-left: 6px; vertical-align: middle; }
+  .pred-main { display: flex; align-items: center; gap: 14px; margin: 2px 0 12px; }
+  .pred-arrow { font-size: 1.35rem; font-weight: 800; padding: 8px 14px; border-radius: 12px; white-space: nowrap; }
+  .pred-arrow.up { color: var(--up); background: var(--up-soft); }
+  .pred-arrow.down { color: var(--down); background: var(--down-soft); }
+  .pred-arrow.flat { color: var(--flat); background: var(--surface-2); }
+  .pred-nums { display: flex; flex-direction: column; gap: 3px; }
+  .pred-ret { font-size: 1.5rem; font-weight: 800; line-height: 1; }
+  .pred-ret.up { color: var(--up); } .pred-ret.down { color: var(--down); } .pred-ret.flat { color: var(--flat); }
+  .pred-sub { font-size: .78rem; color: var(--muted); font-weight: 600; }
+  .pred-sub b { color: var(--ink-2); font-weight: 700; }
+  .pred-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .pred-stats .ps { flex: 1; min-width: 88px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+  .pred-stats .ps .psl { display: block; font-size: .64rem; color: var(--muted); font-weight: 650; margin-bottom: 3px; }
+  .pred-stats .ps .psv { font-size: 1rem; font-weight: 750; color: var(--ink); }
+  .pred-note { font-size: .72rem; color: var(--muted); line-height: 1.55; margin: 0; }
+
   /* ---- AI News ---- */
   .news .news-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
   .news .news-title { font-size: .74rem; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 700; display: inline-flex; align-items: center; gap: 7px; }
@@ -341,6 +359,20 @@
     <div class="meter"><span class="meter-fill" id="v-fill"></span><span class="meter-mid"></span></div>
     <div class="scale-lbls"><span>매도 우위</span><span>중립</span><span>매수 우위</span></div>
     <ul class="factors" id="factors"></ul>
+  </section>
+
+  <!-- MICRON → HYNIX PREDICTION (하이닉스 전용) -->
+  <section class="card" id="predict-card" hidden>
+    <p class="card-title">마이크론 → 하이닉스 예측 <span class="pred-tag">실험적</span></p>
+    <div class="pred-main">
+      <span class="pred-arrow flat" id="pred-arrow">–</span>
+      <div class="pred-nums">
+        <span class="pred-ret num" id="pred-ret">–</span>
+        <span class="pred-sub">예상 종가 <b class="num" id="pred-close">–</b> · 기준일 <span id="pred-base">–</span></span>
+      </div>
+    </div>
+    <div class="pred-stats" id="pred-stats"></div>
+    <p class="pred-note" id="pred-note"></p>
   </section>
 
   <!-- INDICATOR CHIPS -->
@@ -1395,6 +1427,99 @@
     ov.addEventListener("touchend", hide);
   }
 
+  /* ---------- 마이크론 → 하이닉스 예측 (lead-lag OLS) ---------- */
+  // 아이디어: 마이크론·하이닉스는 같은 메모리 반도체 업종이라 상관이 높고,
+  // 마이크론은 한국시간 '밤'에 미국장을 마치므로 하이닉스 '다음 거래일' 종가보다
+  // 정보가 먼저 확정된다. 이 시차를 이용해 하이닉스 당일 로그수익률을 마이크론
+  // '전일' 로그수익률로 회귀 예측한다. 전일만 쓰므로 미래참조(look-ahead)가 없다.
+  function closesByUTCDate(pts) {
+    const m = {};
+    for (const p of pts || []) {
+      if (!p || !isFinite(p.t) || !isFinite(p.c) || p.c <= 0) continue;
+      m[new Date(p.t * 1000).toISOString().slice(0, 10)] = p.c; // UTC 날짜 → 종가
+    }
+    return m;
+  }
+  const _logret = a => { const o = []; for (let i = 1; i < a.length; i++) o.push(Math.log(a[i] / a[i - 1])); return o; };
+  const _mean = a => a.reduce((s, v) => s + v, 0) / a.length;
+  function _linreg(x, y) { // 단순선형회귀 → [절편, 기울기]
+    const mx = _mean(x), my = _mean(y);
+    let sxy = 0, sxx = 0;
+    for (let i = 0; i < x.length; i++) { sxy += (x[i] - mx) * (y[i] - my); sxx += (x[i] - mx) ** 2; }
+    const b1 = sxx > 0 ? sxy / sxx : 0;
+    return [my - b1 * mx, b1];
+  }
+  function _evalSeg(x, y, b) { // R²·방향적중
+    const n = x.length; if (!n) return { r2: NaN, da: NaN };
+    const my = _mean(y); let ssr = 0, sst = 0, hit = 0;
+    for (let i = 0; i < n; i++) {
+      const yh = b[0] + b[1] * x[i];
+      ssr += (y[i] - yh) ** 2; sst += (y[i] - my) ** 2;
+      if ((y[i] >= 0) === (yh >= 0)) hit++;
+    }
+    return { r2: sst > 0 ? 1 - ssr / sst : NaN, da: hit / n };
+  }
+
+  async function renderPrediction(hyLive) {
+    const card = document.getElementById("predict-card");
+    // 하이닉스 실데이터가 있을 때만(예시 모드·타 종목에서는 숨김)
+    if (curStock !== "hynix" || !hyLive || !hyLive.pts) { card.hidden = true; return; }
+    const muLive = await loadLive("micron");
+    if (!muLive || !muLive.pts) { card.hidden = true; return; }
+
+    const muMap = closesByUTCDate(muLive.pts), hyMap = closesByUTCDate(hyLive.pts);
+    const dates = Object.keys(muMap).filter(d => d in hyMap).sort();
+    if (dates.length < 60) { card.hidden = true; return; }
+
+    const muR = _logret(dates.map(d => muMap[d]));   // index i ↔ dates[i+1]
+    const hyC = dates.map(d => hyMap[d]);
+    const hyR = _logret(hyC);
+    const X = [], y = [];                            // 하이닉스[t] ~ 마이크론[t-1]
+    for (let i = 1; i < hyR.length; i++) { X.push(muR[i - 1]); y.push(hyR[i]); }
+
+    const ntr = Math.max(30, Math.floor(X.length * 0.8));
+    const beta = _linreg(X.slice(0, ntr), y.slice(0, ntr));
+    const te = _evalSeg(X.slice(ntr), y.slice(ntr), beta);
+
+    // 다음 하이닉스 거래일 예측 — 가장 최근 마이크론 수익률 사용
+    const feat = muR[muR.length - 1];
+    const predRet = beta[0] + beta[1] * feat;
+    const lastHy = hyC[hyC.length - 1];
+    const predClose = lastHy * Math.exp(predRet);
+    const dir = predRet > 0.0005 ? "up" : predRet < -0.0005 ? "down" : "flat";
+
+    // 참고: 당일(동시점) 상관
+    const corr = (() => {
+      const mr = _logret(dates.map(d => muMap[d]));
+      const a = mr, b = hyR; const ma = _mean(a), mb = _mean(b);
+      let cov = 0, va = 0, vb = 0;
+      for (let i = 0; i < a.length; i++) { cov += (a[i] - ma) * (b[i] - mb); va += (a[i] - ma) ** 2; vb += (b[i] - mb) ** 2; }
+      return (va > 0 && vb > 0) ? cov / Math.sqrt(va * vb) : NaN;
+    })();
+
+    const arrowEl = document.getElementById("pred-arrow");
+    const retEl = document.getElementById("pred-ret");
+    arrowEl.className = "pred-arrow " + dir;
+    arrowEl.textContent = dir === "up" ? "▲ 상승" : dir === "down" ? "▼ 하락" : "― 보합";
+    retEl.className = "pred-ret num " + dir;
+    retEl.textContent = (predRet >= 0 ? "+" : "") + (predRet * 100).toFixed(2) + "%";
+    document.getElementById("pred-close").textContent = fmtPx(predClose) + "원";
+    document.getElementById("pred-base").textContent = dates[dates.length - 1];
+
+    const pct = v => isFinite(v) ? (v * 100).toFixed(1) + "%" : "–";
+    const sgn = v => isFinite(v) ? (v >= 0 ? "+" : "") + v.toFixed(3) : "–";
+    document.getElementById("pred-stats").innerHTML =
+      `<div class="ps"><span class="psl">검증 방향적중</span><span class="psv">${pct(te.da)}</span></div>` +
+      `<div class="ps"><span class="psl">검증 R²</span><span class="psv">${sgn(te.r2)}</span></div>` +
+      `<div class="ps"><span class="psl">당일 상관계수</span><span class="psv">${sgn(corr)}</span></div>` +
+      `<div class="ps"><span class="psl">표본(거래일)</span><span class="psv">${dates.length.toLocaleString("ko-KR")}</span></div>`;
+    document.getElementById("pred-note").textContent =
+      "마이크론 전일 로그수익률로 하이닉스 다음 거래일 수익률을 회귀 예측합니다(미래참조 없음). "
+      + "일간 예측의 설명력(R²)은 원래 낮은 것이 정상이며, 방향적중이 50%에 가까우면 실질 예측력이 "
+      + "거의 없다는 뜻입니다. 학습·연구용 참고 지표이며 투자 자문이 아닙니다.";
+    card.hidden = false;
+  }
+
   /* ---------- 종목 선택 (실시간 우선, 없으면 예시 폴백) ---------- */
   async function selectStock(key) {
     if (!STOCKS[key]) key = "hynix";
@@ -1424,6 +1549,7 @@
     renderNews(news);
     renderFundamentals(fund);
     renderFinancials(fin);
+    renderPrediction(live);   // 하이닉스 실데이터에서만 마이크론 예측 표시(그 외 숨김)
   }
 
   /* ---------- 이벤트 ---------- */
