@@ -1600,22 +1600,25 @@
   let predChartRows = null;
   function buildPredLegend() {
     document.getElementById("predchart-legend").innerHTML =
-      `<span class="lg"><span class="sw" style="background:${cssv("--ink-2")}"></span>실제</span>`
-      + `<span class="lg"><span class="sw" style="background:${cssv("--warn")}"></span>예측</span>`;
+      `<span class="lg"><span class="sw" style="background:${cssv("--up")}"></span>방향 적중</span>`
+      + `<span class="lg"><span class="sw" style="background:${cssv("--down")}"></span>방향 빗나감</span>`;
   }
   function drawPredChart(rows) {
     buildPredLegend();
     const svg = document.getElementById("chart-predchart");
     const W = 340, H = 210, PAD = { l: 30, r: 8, t: 10, b: 20 }, n = rows.length;
     if (!n) { svg.innerHTML = ""; return; }
+    // 막대 높이 = 그날 '실제' 수익률, 색 = 예측 방향 적중(적)/빗나감(청)
     let m = 0;
-    rows.forEach(r => { m = Math.max(m, Math.abs(r.actual), Math.abs(r.pred)); });
+    rows.forEach(r => { m = Math.max(m, Math.abs(r.actual)); });
     m = m || 1;
     const lo = -m, hi = m;   // 0 중심 대칭
-    const x = i => PAD.l + (n <= 1 ? 0 : (i / (n - 1)) * (W - PAD.l - PAD.r));
+    const plotW = W - PAD.l - PAD.r;
+    const x = i => PAD.l + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW);
     const y = v => PAD.t + (1 - (v - lo) / (hi - lo)) * (H - PAD.t - PAD.b);
-    const pathOf = key => rows.map((r, i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(r[key]).toFixed(1)).join(" ");
-    const cA = cssv("--ink-2"), cP = cssv("--warn"), cG = cssv("--border"), cM = cssv("--muted");
+    const bw = Math.max(0.8, plotW / n * 0.72);
+    const y0 = y(0);
+    const cUp = cssv("--up"), cDn = cssv("--down"), cG = cssv("--border"), cM = cssv("--muted");
     let g = "";
     [hi, 0, lo].forEach(t => {
       g += `<line x1="${PAD.l}" y1="${y(t).toFixed(1)}" x2="${W - PAD.r}" y2="${y(t).toFixed(1)}" stroke="${cG}" stroke-width="${t === 0 ? 0.8 : 0.5}"/>`;
@@ -1623,18 +1626,20 @@
     });
     g += `<text x="${PAD.l}" y="${H - 6}" font-size="7" fill="${cM}">${rows[0].date}</text>`;
     g += `<text x="${W - PAD.r}" y="${H - 6}" font-size="7" fill="${cM}" text-anchor="end">${rows[n - 1].date}</text>`;
-    svg.innerHTML = g
-      + `<path d="${pathOf("actual")}" fill="none" stroke="${cA}" stroke-width="1.1"/>`
-      + `<path d="${pathOf("pred")}" fill="none" stroke="${cP}" stroke-width="1.4"/>`
+    let bars = "";
+    rows.forEach((r, i) => {
+      const hit = (r.actual >= 0) === (r.pred >= 0);
+      const yv = y(r.actual), top = Math.min(yv, y0), h = Math.max(0.4, Math.abs(yv - y0));
+      bars += `<rect x="${(x(i) - bw / 2).toFixed(2)}" y="${top.toFixed(2)}" width="${bw.toFixed(2)}" height="${h.toFixed(2)}" fill="${hit ? cUp : cDn}" opacity="0.9"/>`;
+    });
+    svg.innerHTML = g + bars
       + `<line id="pc-cross" x1="0" y1="${PAD.t}" x2="0" y2="${H - PAD.b}" stroke="${cM}" stroke-width="0.7" opacity="0"/>`
-      + `<circle id="pc-mA" r="2.4" fill="${cA}" opacity="0"/>`
-      + `<circle id="pc-mP" r="2.4" fill="${cP}" opacity="0"/>`
       + `<rect id="pc-ov" x="0" y="0" width="${W}" height="${H}" fill="transparent"/>`;
     attachPredHover(svg, rows, { W, n, x, y });
   }
   function attachPredHover(svg, rows, meta) {
     const tip = document.getElementById("tip-predchart");
-    const cross = svg.querySelector("#pc-cross"), mA = svg.querySelector("#pc-mA"), mP = svg.querySelector("#pc-mP");
+    const cross = svg.querySelector("#pc-cross");
     const show = ev => {
       const rect = svg.getBoundingClientRect();
       const cx = (ev.touches ? ev.touches[0].clientX : ev.clientX) - rect.left;
@@ -1642,8 +1647,6 @@
       const i = Math.max(0, Math.min(meta.n - 1, Math.round(frac * (meta.n - 1))));
       const r = rows[i], xx = meta.x(i);
       cross.setAttribute("x1", xx); cross.setAttribute("x2", xx); cross.setAttribute("opacity", .7);
-      mA.setAttribute("cx", xx); mA.setAttribute("cy", meta.y(r.actual)); mA.setAttribute("opacity", 1);
-      mP.setAttribute("cx", xx); mP.setAttribute("cy", meta.y(r.pred)); mP.setAttribute("opacity", 1);
       const hit = (r.actual >= 0) === (r.pred >= 0), err = r.actual - r.pred;
       let html = `<div class="tdate">${r.date}</div>`;
       html += trow(cssv("--ink-2"), "실제", (r.actual >= 0 ? "+" : "") + r.actual.toFixed(2) + "%");
@@ -1656,7 +1659,7 @@
       tip.style.top = "6px"; tip.style.opacity = 1;
       if (ev.cancelable && ev.touches) ev.preventDefault();
     };
-    const hide = () => { cross.setAttribute("opacity", 0); mA.setAttribute("opacity", 0); mP.setAttribute("opacity", 0); tip.style.opacity = 0; };
+    const hide = () => { cross.setAttribute("opacity", 0); tip.style.opacity = 0; };
     const ov = svg.querySelector("#pc-ov");
     ov.addEventListener("mousemove", show); ov.addEventListener("mouseleave", hide);
     ov.addEventListener("touchstart", show, { passive: false });
