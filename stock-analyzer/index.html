@@ -427,8 +427,8 @@
     <header>
       <span class="kicker">예측 · Prediction</span>
       <div class="ticker-row">
-        <span class="ticker">마이크론 → SK하이닉스</span>
-        <span class="ticker-code">MU → KRX 000660</span>
+        <span class="ticker">마이크론·엔비디아 → SK하이닉스</span>
+        <span class="ticker-code">MU·NVDA → KRX 000660</span>
       </div>
     </header>
     <section class="card" id="predict-card">
@@ -436,8 +436,8 @@
       <div class="pred-main">
         <span class="pred-arrow flat" id="pred-arrow">–</span>
         <div class="pred-nums">
-          <span class="pred-ret num" id="pred-ret">–</span>
-          <span class="pred-sub">예상 종가 <b class="num" id="pred-close">–</b> · 기준일 <span id="pred-base">–</span></span>
+          <span class="pred-ret num" id="pred-prob">–</span>
+          <span class="pred-sub">예상 수익률 <b class="num" id="pred-ret">–</b> · 예상 종가 <b class="num" id="pred-close">–</b> · 기준일 <span id="pred-base">–</span></span>
         </div>
       </div>
       <div class="pred-stats" id="pred-stats"></div>
@@ -1449,46 +1449,140 @@
     ov.addEventListener("touchend", hide);
   }
 
-  /* ---------- 마이크론 → 하이닉스 예측 (lead-lag OLS) ---------- */
-  // 아이디어: 마이크론·하이닉스는 같은 메모리 반도체 업종이라 상관이 높고,
-  // 마이크론은 한국시간 '밤'에 미국장을 마치므로 하이닉스 '다음 거래일' 종가보다
-  // 정보가 먼저 확정된다. 이 시차를 이용해 하이닉스 당일 로그수익률을 마이크론
-  // '전일' 로그수익률로 회귀 예측한다. 전일만 쓰므로 미래참조(look-ahead)가 없다.
-  function closesByUTCDate(pts) {
-    const m = {};
-    for (const p of pts || []) {
-      if (!p || !isFinite(p.t) || !isFinite(p.c) || p.c <= 0) continue;
-      m[new Date(p.t * 1000).toISOString().slice(0, 10)] = p.c; // UTC 날짜 → 종가
-    }
-    return m;
-  }
-  const _logret = a => { const o = []; for (let i = 1; i < a.length; i++) o.push(Math.log(a[i] / a[i - 1])); return o; };
+  /* ---------- 마이크론·엔비디아 → 하이닉스 예측 (정밀 정렬 lead-lag) ---------- */
+  // 마이크론·엔비디아는 한국시간 '밤'에 미국장을 마치므로 하이닉스 '다음 거래일'
+  // 종가보다 정보가 먼저 확정된다. 각 하이닉스 종가 '직전'에 마감된 미국 종가를
+  // 타임스탬프로 찾아(정밀 정렬·미래참조 없음) 하이닉스 로그수익률을 예측한다.
+  // 수익률은 릿지 OLS(예상 종가), 방향은 로지스틱 회귀(상승 확률)로 각각 모델링하고
+  // 워크포워드 표본외 검증 + 베이스라인 비교로 실질 예측력을 함께 표시한다.
+  const LAM = 1.0, WF_STEP = 10;
   const _mean = a => a.reduce((s, v) => s + v, 0) / a.length;
-  function _linreg(x, y) { // 단순선형회귀 → [절편, 기울기]
-    const mx = _mean(x), my = _mean(y);
-    let sxy = 0, sxx = 0;
-    for (let i = 0; i < x.length; i++) { sxy += (x[i] - mx) * (y[i] - my); sxx += (x[i] - mx) ** 2; }
-    const b1 = sxx > 0 ? sxy / sxx : 0;
-    return [my - b1 * mx, b1];
-  }
-  function _evalSeg(x, y, b) { // R²·방향적중
-    const n = x.length; if (!n) return { r2: NaN, da: NaN };
-    const my = _mean(y); let ssr = 0, sst = 0, hit = 0;
-    for (let i = 0; i < n; i++) {
-      const yh = b[0] + b[1] * x[i];
-      ssr += (y[i] - yh) ** 2; sst += (y[i] - my) ** 2;
-      if ((y[i] >= 0) === (yh >= 0)) hit++;
+  const _sig = x => 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, x))));
+  const _dot = (b, row) => b[0] + row.reduce((s, v, i) => s + b[i + 1] * v, 0);
+
+  function _solve(A, b) { // 가우스 소거(부분 피벗) A x = b
+    const n = A.length, M = A.map((r, i) => [...r, b[i]]);
+    for (let c = 0; c < n; c++) {
+      let piv = c;
+      for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+      if (Math.abs(M[piv][c]) < 1e-15) M[piv][c] = 1e-15;
+      [M[c], M[piv]] = [M[piv], M[c]];
+      const pv = M[c][c];
+      for (let j = 0; j <= n; j++) M[c][j] /= pv;
+      for (let r = 0; r < n; r++) if (r !== c && M[r][c] !== 0) {
+        const f = M[r][c];
+        for (let j = 0; j <= n; j++) M[r][j] -= f * M[c][j];
+      }
     }
-    return { r2: sst > 0 ? 1 - ssr / sst : NaN, da: hit / n };
+    return M.map(r => r[n]);
+  }
+  function _fitScaler(X) {
+    const k = X[0].length, mu = [], sd = [];
+    for (let j = 0; j < k; j++) {
+      let m = 0; for (const r of X) m += r[j]; m /= X.length;
+      let v = 0; for (const r of X) v += (r[j] - m) ** 2; v /= X.length;
+      mu.push(m); sd.push(Math.sqrt(v) || 1);
+    }
+    return { mu, sd };
+  }
+  const _applyScaler = (X, s) => X.map(r => r.map((v, j) => (v - s.mu[j]) / s.sd[j]));
+  function _olsRidge(Xs, y, lam) {
+    const Xi = Xs.map(r => [1, ...r]), k = Xi[0].length;
+    const XtX = Array.from({ length: k }, () => Array(k).fill(0)), Xty = Array(k).fill(0);
+    for (let r = 0; r < Xi.length; r++) for (let i = 0; i < k; i++) {
+      Xty[i] += Xi[r][i] * y[r];
+      for (let j = 0; j < k; j++) XtX[i][j] += Xi[r][i] * Xi[r][j];
+    }
+    for (let i = 1; i < k; i++) XtX[i][i] += lam;
+    return _solve(XtX, Xty);
+  }
+  function _logistic(Xs, y01, lam, iters) { // IRLS + 릿지
+    const Xi = Xs.map(r => [1, ...r]), n = Xi.length, k = Xi[0].length;
+    let g = Array(k).fill(0);
+    for (let it = 0; it < iters; it++) {
+      const A = Array.from({ length: k }, () => Array(k).fill(0)), bb = Array(k).fill(0);
+      for (let r = 0; r < n; r++) {
+        let eta = 0; for (let j = 0; j < k; j++) eta += g[j] * Xi[r][j];
+        const p = _sig(eta), w = Math.max(p * (1 - p), 1e-6), z = eta + (y01[r] - p) / w;
+        for (let i = 0; i < k; i++) { const wi = w * Xi[r][i]; bb[i] += wi * z; for (let j = 0; j < k; j++) A[i][j] += wi * Xi[r][j]; }
+      }
+      for (let i = 1; i < k; i++) A[i][i] += lam;
+      const gn = _solve(A, bb);
+      let d = 0; for (let j = 0; j < k; j++) d = Math.max(d, Math.abs(gn[j] - g[j]));
+      g = gn; if (d < 1e-8) break;
+    }
+    return g;
+  }
+  function _lastBefore(ts, cs, t) { // ts 오름차순, t 미만 최근값
+    let lo = 0, hi = ts.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (ts[m] < t) lo = m + 1; else hi = m; }
+    return lo > 0 ? cs[lo - 1] : null;
+  }
+  function _prepFeed(pts) {
+    const s = pts.slice().filter(p => isFinite(p.t) && isFinite(p.c) && p.c > 0).sort((a, b) => a.t - b.t);
+    return { ts: s.map(p => p.t), cs: s.map(p => p.c) };
+  }
+  function _buildAligned(hyPts, feeds) {
+    const hy = hyPts.slice().filter(p => isFinite(p.t) && isFinite(p.c) && p.c > 0).sort((a, b) => a.t - b.t);
+    const X = [], y = [], dates = [], hyc = [], prevy = [];
+    for (let i = 1; i < hy.length; i++) {
+      const t0 = hy[i - 1].t, t1 = hy[i].t, feats = []; let ok = true;
+      for (const f of feeds) {
+        const a = _lastBefore(f.ts, f.cs, t0), b = _lastBefore(f.ts, f.cs, t1);
+        if (!a || !b || a <= 0 || b <= 0) { ok = false; break; }
+        feats.push(Math.log(b / a));
+      }
+      if (!ok) continue;
+      X.push(feats); y.push(Math.log(hy[i].c / hy[i - 1].c));
+      dates.push(new Date(t1 * 1000).toISOString().slice(0, 10));
+      hyc.push(hy[i].c); prevy.push(y.length >= 2 ? y[y.length - 2] : 0);
+    }
+    return { X, y, dates, hyc, prevy };
+  }
+  function _nextFeatures(hyPts, feeds) {
+    const hy = hyPts.slice().filter(p => isFinite(p.t) && isFinite(p.c) && p.c > 0).sort((a, b) => a.t - b.t);
+    const tLast = hy[hy.length - 1].t, feats = [];
+    for (const f of feeds) {
+      const base = _lastBefore(f.ts, f.cs, tLast), latest = f.cs[f.cs.length - 1];
+      if (!base || base <= 0 || !latest || latest <= 0) return null;
+      feats.push(Math.log(latest / base));
+    }
+    return feats;
+  }
+  function _walkForward(X, y, prevy, lam, init, step) {
+    const n = X.length, oos = [];
+    for (let i = Math.max(init, step); i < n; i += step) {
+      const Xtr = X.slice(0, i), ytr = y.slice(0, i);
+      const sc = _fitScaler(Xtr), Xs = _applyScaler(Xtr, sc);
+      const beta = _olsRidge(Xs, ytr, lam);
+      const gam = _logistic(Xs, ytr.map(v => v > 0 ? 1 : 0), lam, 25);
+      for (let j = i; j < Math.min(i + step, n); j++) {
+        const xs = _applyScaler([X[j]], sc)[0];
+        oos.push([_dot(beta, xs), _sig(_dot(gam, xs)), y[j], X[j][0], prevy[j]]);
+      }
+    }
+    return oos;
+  }
+  function _summarize(oos) {
+    const n = oos.length, yt = oos.map(o => o[2]), my = _mean(yt);
+    let ssr = 0, sst = 0;
+    for (const o of oos) { ssr += (o[2] - o[0]) ** 2; sst += (o[2] - my) ** 2; }
+    const acc = oos.filter(o => (o[1] >= 0.5) === (o[2] > 0)).length / n;
+    const up = oos.filter(o => o[2] > 0).length / n;
+    return {
+      n, r2: sst > 0 ? 1 - ssr / sst : NaN, acc,
+      baseUp: Math.max(up, 1 - up),
+      baseMom: oos.filter(o => (o[4] >= 0) === (o[2] > 0)).length / n,
+      baseUS: oos.filter(o => (o[3] >= 0) === (o[2] > 0)).length / n,
+    };
   }
 
-  // 하이닉스 종가는 항상 KRW로 표기(예측 탭은 curCurrency와 무관)
   const fmtKRW = n => (n == null || isNaN(n)) ? "–" : Math.round(n).toLocaleString("ko-KR") + "원";
   function predMsg(msg) {
     const a = document.getElementById("pred-arrow");
     a.className = "pred-arrow flat"; a.textContent = "–";
+    const pr = document.getElementById("pred-prob"); pr.className = "pred-ret num flat"; pr.textContent = "–";
     document.getElementById("pred-ret").textContent = "–";
-    document.getElementById("pred-ret").className = "pred-ret num flat";
     document.getElementById("pred-close").textContent = "–";
     document.getElementById("pred-base").textContent = "–";
     document.getElementById("pred-stats").innerHTML = "";
@@ -1497,60 +1591,63 @@
 
   async function renderPrediction() {
     document.getElementById("pred-note").textContent = "불러오는 중…";
-    const [hyLive, muLive] = await Promise.all([loadLive("hynix"), loadLive("micron")]);
-    if (!hyLive || !hyLive.pts || !muLive || !muLive.pts) {
-      predMsg("실시간 데이터를 불러오지 못했습니다. 잠시 후 새로고침해 주세요."); return;
-    }
-    const muMap = closesByUTCDate(muLive.pts), hyMap = closesByUTCDate(hyLive.pts);
-    const dates = Object.keys(muMap).filter(d => d in hyMap).sort();
-    if (dates.length < 60) { predMsg("공통 거래일이 부족해 예측할 수 없습니다."); return; }
+    const [hy, mu, nv] = await Promise.all([loadLive("hynix"), loadLive("micron"), loadLive("nvidia")]);
+    if (!hy || !hy.pts || !mu || !mu.pts) { predMsg("실시간 데이터를 불러오지 못했습니다. 잠시 후 새로고침해 주세요."); return; }
+    const feeds = [{ name: "마이크론", ...(_prepFeed(mu.pts)) }];
+    if (nv && nv.pts && nv.pts.length > 30) feeds.push({ name: "엔비디아", ...(_prepFeed(nv.pts)) });
 
-    const muR = _logret(dates.map(d => muMap[d]));   // index i ↔ dates[i+1]
-    const hyC = dates.map(d => hyMap[d]);
-    const hyR = _logret(hyC);
-    const X = [], y = [];                            // 하이닉스[t] ~ 마이크론[t-1]
-    for (let i = 1; i < hyR.length; i++) { X.push(muR[i - 1]); y.push(hyR[i]); }
+    const { X, y, dates, hyc, prevy } = _buildAligned(hy.pts, feeds);
+    if (X.length < 120) { predMsg("공통 거래일이 부족해 예측할 수 없습니다."); return; }
 
-    const ntr = Math.max(30, Math.floor(X.length * 0.8));
-    const beta = _linreg(X.slice(0, ntr), y.slice(0, ntr));
-    const te = _evalSeg(X.slice(ntr), y.slice(ntr), beta);
+    // 전체 데이터 최종 모델(다음 거래일용)
+    const sc = _fitScaler(X), Xs = _applyScaler(X, sc);
+    const beta = _olsRidge(Xs, y, LAM);
+    const gam = _logistic(Xs, y.map(v => v > 0 ? 1 : 0), LAM, 30);
 
-    // 다음 하이닉스 거래일 예측 — 가장 최근 마이크론 수익률 사용
-    const feat = muR[muR.length - 1];
-    const predRet = beta[0] + beta[1] * feat;
-    const lastHy = hyC[hyC.length - 1];
-    const predClose = lastHy * Math.exp(predRet);
-    const dir = predRet > 0.0005 ? "up" : predRet < -0.0005 ? "down" : "flat";
+    // 워크포워드 표본외 평가
+    const oos = _walkForward(X, y, prevy, LAM, Math.max(120, Math.floor(X.length * 0.5)), WF_STEP);
+    const s = _summarize(oos);
 
-    // 참고: 당일(동시점) 상관
-    const corr = (() => {
-      const mr = _logret(dates.map(d => muMap[d]));
-      const a = mr, b = hyR; const ma = _mean(a), mb = _mean(b);
-      let cov = 0, va = 0, vb = 0;
-      for (let i = 0; i < a.length; i++) { cov += (a[i] - ma) * (b[i] - mb); va += (a[i] - ma) ** 2; vb += (b[i] - mb) ** 2; }
-      return (va > 0 && vb > 0) ? cov / Math.sqrt(va * vb) : NaN;
-    })();
-
+    // 다음 거래일 예측
+    const nf = _nextFeatures(hy.pts, feeds);
     const arrowEl = document.getElementById("pred-arrow");
-    const retEl = document.getElementById("pred-ret");
-    arrowEl.className = "pred-arrow " + dir;
-    arrowEl.textContent = dir === "up" ? "▲ 상승" : dir === "down" ? "▼ 하락" : "― 보합";
-    retEl.className = "pred-ret num " + dir;
-    retEl.textContent = (predRet >= 0 ? "+" : "") + (predRet * 100).toFixed(2) + "%";
-    document.getElementById("pred-close").textContent = fmtKRW(predClose);
+    const probEl = document.getElementById("pred-prob");
+    if (!nf) {
+      arrowEl.className = "pred-arrow flat"; arrowEl.textContent = "–";
+      probEl.className = "pred-ret num flat"; probEl.textContent = "–";
+      document.getElementById("pred-ret").textContent = "–";
+      document.getElementById("pred-close").textContent = "–";
+    } else {
+      const xs = _applyScaler([nf], sc)[0];
+      const pUp = _sig(_dot(gam, xs)), predRet = _dot(beta, xs);
+      const lastHy = hyc[hyc.length - 1], predClose = lastHy * Math.exp(predRet);
+      const dir = pUp >= 0.5 ? "up" : "down";
+      arrowEl.className = "pred-arrow " + dir;
+      arrowEl.textContent = dir === "up" ? "▲ 상승" : "▼ 하락";
+      probEl.className = "pred-ret num " + dir;
+      probEl.textContent = "상승확률 " + (pUp * 100).toFixed(0) + "%";
+      document.getElementById("pred-ret").textContent = (predRet >= 0 ? "+" : "") + (predRet * 100).toFixed(2) + "%";
+      document.getElementById("pred-close").textContent = fmtKRW(predClose);
+    }
     document.getElementById("pred-base").textContent = dates[dates.length - 1];
 
     const pct = v => isFinite(v) ? (v * 100).toFixed(1) + "%" : "–";
     const sgn = v => isFinite(v) ? (v >= 0 ? "+" : "") + v.toFixed(3) : "–";
+    const bestBase = Math.max(s.baseUp, s.baseMom, s.baseUS);
     document.getElementById("pred-stats").innerHTML =
-      `<div class="ps"><span class="psl">검증 방향적중</span><span class="psv">${pct(te.da)}</span></div>` +
-      `<div class="ps"><span class="psl">검증 R²</span><span class="psv">${sgn(te.r2)}</span></div>` +
-      `<div class="ps"><span class="psl">당일 상관계수</span><span class="psv">${sgn(corr)}</span></div>` +
-      `<div class="ps"><span class="psl">표본(거래일)</span><span class="psv">${dates.length.toLocaleString("ko-KR")}</span></div>`;
-    document.getElementById("pred-note").textContent =
-      "마이크론 전일 로그수익률로 하이닉스 다음 거래일 수익률을 회귀 예측합니다(미래참조 없음). "
-      + "일간 예측의 설명력(R²)은 원래 낮은 것이 정상이며, 방향적중이 50%에 가까우면 실질 예측력이 "
-      + "거의 없다는 뜻입니다. 학습·연구용 참고 지표이며 투자 자문이 아닙니다.";
+      `<div class="ps"><span class="psl">표본외 방향적중</span><span class="psv">${pct(s.acc)}</span></div>` +
+      `<div class="ps"><span class="psl">표본외 R²</span><span class="psv">${sgn(s.r2)}</span></div>` +
+      `<div class="ps"><span class="psl">최고 베이스라인</span><span class="psv">${pct(bestBase)}</span></div>` +
+      `<div class="ps"><span class="psl">표본(거래일)</span><span class="psv">${s.n.toLocaleString("ko-KR")}</span></div>`;
+
+    const edge = (s.acc - bestBase) * 100;
+    const verdict = edge > 1 ? "베이스라인 대비 우위" : (edge > -1 ? "사실상 베이스라인 수준(예측력 미미)" : "베이스라인보다 못함");
+    document.getElementById("pred-note").innerHTML =
+      `특징: <b>${feeds.map(f => f.name).join(" · ")}</b> 밤사이 수익률(정밀 시점 정렬, 미래참조 없음). `
+      + `방향은 로지스틱, 예상 종가는 릿지 회귀로 산출. `
+      + `베이스라인 — 항상 같은 방향 ${pct(s.baseUp)} · 하이닉스 모멘텀 ${pct(s.baseMom)} · 미국 신호 그대로 ${pct(s.baseUS)}. `
+      + `<b>최고 베이스라인 대비 ${edge >= 0 ? "+" : ""}${edge.toFixed(1)}%p → ${verdict}.</b> `
+      + `일간 예측의 R²는 원래 낮은 것이 정상이며, 학습·연구용 참고 지표이고 투자 자문이 아닙니다.`;
   }
 
   /* ---------- 종목 선택 (실시간 우선, 없으면 예시 폴백) ---------- */
