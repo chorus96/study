@@ -1713,7 +1713,7 @@
     document.getElementById("candle-legend").innerHTML =
       `<span class="lg"><span class="sw" style="background:${cssv("--up")}"></span>상승</span>`
       + `<span class="lg"><span class="sw" style="background:${cssv("--down")}"></span>하락</span>`
-      + `<span class="lg" style="color:var(--muted)">채움=실제 · 테두리=예측</span>`;
+      + `<span class="lg" style="color:var(--muted)">채움=실제 · 점선=예측</span>`;
   }
   function drawCandleChart(rows) {
     buildCandleLegend();
@@ -1742,12 +1742,12 @@
     const body = (x, o, c, filled) => {
       const col = (c >= o) ? up : dn, top = y(Math.max(o, c)), h = Math.max(1, Math.abs(y(o) - y(c)));
       return filled
-        ? `<rect x="${x.toFixed(2)}" y="${top.toFixed(2)}" width="${cw.toFixed(2)}" height="${h.toFixed(2)}" fill="${col}" opacity="0.92"/>`
-        : `<rect x="${x.toFixed(2)}" y="${top.toFixed(2)}" width="${cw.toFixed(2)}" height="${h.toFixed(2)}" fill="none" stroke="${col}" stroke-width="1.1" vector-effect="non-scaling-stroke"/>`;
+        ? `<rect x="${x.toFixed(2)}" y="${top.toFixed(2)}" width="${cw.toFixed(2)}" height="${h.toFixed(2)}" fill="${col}" opacity="0.95"/>`
+        : `<rect x="${x.toFixed(2)}" y="${top.toFixed(2)}" width="${cw.toFixed(2)}" height="${h.toFixed(2)}" fill="${col}" fill-opacity="0.14" stroke="${col}" stroke-width="1.5" stroke-dasharray="2.4 1.6" vector-effect="non-scaling-stroke"/>`;
     };
     let cndl = "";
     rows.forEach((r, i) => {
-      const c = xc(i), predX = c - 1 - cw, actX = c + 1;
+      const c = xc(i), predX = c - 2 - cw, actX = c + 2;
       if (isFinite(r.pOpen) && isFinite(r.pClose)) cndl += body(predX, r.pOpen, r.pClose, false);
       if (isFinite(r.aOpen) && isFinite(r.aClose)) cndl += body(actX, r.aOpen, r.aClose, true);
     });
@@ -1879,7 +1879,7 @@
     }
     candleRows = cAll.slice(-CANDLE_DAYS);
     if (candleRows.length >= 5) {
-      document.getElementById("candle-sub").textContent = "표본외 최근 " + candleRows.length + "거래일 · 채움=실제/테두리=예측";
+      document.getElementById("candle-sub").textContent = "표본외 최근 " + candleRows.length + "거래일 · 채움=실제/점선=예측";
       drawCandleChart(candleRows);
       document.getElementById("candle-card").hidden = false;
     } else {
