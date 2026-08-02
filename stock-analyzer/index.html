@@ -1476,10 +1476,13 @@
   // 타임스탬프로 찾아(정밀 정렬·미래참조 없음) 하이닉스 로그수익률을 예측한다.
   // 수익률은 릿지 OLS(예상 종가), 방향은 로지스틱 회귀(상승 확률)로 각각 모델링하고
   // 워크포워드 표본외 검증 + 베이스라인 비교로 실질 예측력을 함께 표시한다.
-  const LAM = 1.0, WF_STEP = 10;
+  const LAM = 1.0, WF_STEP = 10, CONF_THR = 0.10;   // |상승확률-0.5|>=0.10 → 고신뢰(60%↑)
   const _mean = a => a.reduce((s, v) => s + v, 0) / a.length;
+  const _std = a => { if (a.length < 2) return 0; const m = _mean(a); return Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / a.length); };
   const _sig = x => 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, x))));
   const _dot = (b, row) => b[0] + row.reduce((s, v, i) => s + b[i + 1] * v, 0);
+  // 비선형·레짐: 기본 특징 + [주력(마이크론) 신호의 부호보존 제곱, 최근 하이닉스 변동성]
+  const _augment = (feats, vol) => feats.concat([feats[0] * Math.abs(feats[0]), vol || 0]);
 
   function _solve(A, b) { // 가우스 소거(부분 피벗) A x = b
     const n = A.length, M = A.map((r, i) => [...r, b[i]]);
@@ -1560,7 +1563,9 @@
         feats.push(Math.log(b / a));
       }
       if (!ok) continue;
-      X.push(feats); y.push(Math.log(hy[i].c / hy[i - 1].c));
+      const curRet = Math.log(hy[i].c / hy[i - 1].c);
+      const vol = _std(y.slice(-20));            // 직전 20일 하이닉스 변동성(인과적 레짐)
+      X.push(_augment(feats, vol)); y.push(curRet);
       dates.push(new Date(t1 * 1000).toISOString().slice(0, 10));
       hyc.push(hy[i].c); prevy.push(y.length >= 2 ? y[y.length - 2] : 0);
       prevc.push(hy[i - 1].c);
@@ -1583,7 +1588,9 @@
       if (!base || base <= 0 || !latest || latest <= 0) return null;
       feats.push(Math.log(latest / base));
     }
-    return feats;
+    const rets = [];
+    for (let k = Math.max(1, hy.length - 20); k < hy.length; k++) rets.push(Math.log(hy[k].c / hy[k - 1].c));
+    return _augment(feats, _std(rets));
   }
   function _walkForward(X, y, prevy, lam, init, step, gap) {
     const n = X.length, oos = [];
@@ -1613,11 +1620,15 @@
     for (const o of oos) { ssr += (o[2] - o[0]) ** 2; sst += (o[2] - my) ** 2; }
     const acc = oos.filter(o => (o[1] >= 0.5) === (o[2] > 0)).length / n;
     const up = oos.filter(o => o[2] > 0).length / n;
+    // 선택적 예측: 고신뢰일(|확률-0.5|>=THR)만 평가
+    const conf = oos.filter(o => Math.abs(o[1] - 0.5) >= CONF_THR);
+    const accConf = conf.length ? conf.filter(o => (o[1] >= 0.5) === (o[2] > 0)).length / conf.length : NaN;
     return {
       n, r2: sst > 0 ? 1 - ssr / sst : NaN, acc,
       baseUp: Math.max(up, 1 - up),
       baseMom: oos.filter(o => (o[4] >= 0) === (o[2] > 0)).length / n,
       baseUS: oos.filter(o => (o[3] >= 0) === (o[2] > 0)).length / n,
+      accConf, coverage: conf.length / n,
     };
   }
 
@@ -1784,10 +1795,13 @@
 
   async function renderPrediction() {
     document.getElementById("pred-note").textContent = "불러오는 중…";
-    const [hy, mu, nv] = await Promise.all([loadLive("hynix"), loadLive("micron"), loadLive("nvidia")]);
+    // 추가 선행지표(있으면 특징에 포함): US 반도체 바스켓 + 원/달러 환율
+    const EXTRA = [["nvidia", "엔비디아"], ["tsmc", "TSMC"], ["amd", "AMD"], ["wdc", "WDC"], ["soxx", "SOX"], ["usdkrw", "원/달러"]];
+    const [hy, mu, ...extra] = await Promise.all([
+      loadLive("hynix"), loadLive("micron"), ...EXTRA.map(e => loadLive(e[0]))]);
     if (!hy || !hy.pts || !mu || !mu.pts) { predMsg("실시간 데이터를 불러오지 못했습니다. 잠시 후 새로고침해 주세요."); return; }
     const feeds = [{ name: "마이크론", ...(_prepFeed(mu.pts)) }];
-    if (nv && nv.pts && nv.pts.length > 30) feeds.push({ name: "엔비디아", ...(_prepFeed(nv.pts)) });
+    extra.forEach((d, i) => { if (d && d.pts && d.pts.length > 30) feeds.push({ name: EXTRA[i][1], ...(_prepFeed(d.pts)) }); });
 
     const { X, y, dates, hyc, prevy, usFresh, gap, hopen, prevc } = _buildAligned(hy.pts, feeds);
     if (X.length < 120) { predMsg("공통 거래일이 부족해 예측할 수 없습니다."); return; }
@@ -1819,11 +1833,13 @@
       const xs = _applyScaler([nf], sc)[0];
       const pUp = _sig(_dot(gam, xs)), predRet = _dot(beta, xs);
       const lastHy = hyc[hyc.length - 1], predClose = lastHy * Math.exp(predRet);
-      const dir = pUp >= 0.5 ? "up" : "down";
+      // 선택적 예측: 확률이 애매하면(고신뢰 기준 미달) '관망'으로 표기
+      const confident = Math.abs(pUp - 0.5) >= CONF_THR;
+      const dir = !confident ? "flat" : (pUp >= 0.5 ? "up" : "down");
       arrowEl.className = "pred-arrow " + dir;
-      arrowEl.textContent = dir === "up" ? "▲ 상승" : "▼ 하락";
+      arrowEl.textContent = dir === "up" ? "▲ 상승" : dir === "down" ? "▼ 하락" : "― 관망";
       probEl.className = "pred-ret num " + dir;
-      probEl.textContent = "상승확률 " + (pUp * 100).toFixed(0) + "%";
+      probEl.textContent = "상승확률 " + (pUp * 100).toFixed(0) + "%" + (confident ? "" : " · 관망");
       // 예상 시작가 = 전일 종가 × exp(밤사이 갭 예측). 시가 데이터 없으면 "–".
       const predOpen = gapBeta ? lastHy * Math.exp(_dot(gapBeta, xs)) : null;
       document.getElementById("pred-open").textContent = predOpen ? fmtKRW(predOpen) : "–";
@@ -1837,6 +1853,8 @@
     const bestBase = Math.max(s.baseUp, s.baseMom, s.baseUS);
     document.getElementById("pred-stats").innerHTML =
       `<div class="ps"><span class="psl">표본외 방향적중</span><span class="psv">${pct(s.acc)}</span></div>` +
+      `<div class="ps"><span class="psl">고신뢰(60%↑) 적중</span><span class="psv">${pct(s.accConf)}</span></div>` +
+      `<div class="ps"><span class="psl">고신뢰 예측일 비중</span><span class="psv">${pct(s.coverage)}</span></div>` +
       `<div class="ps"><span class="psl">표본외 R²</span><span class="psv">${sgn(s.r2)}</span></div>` +
       `<div class="ps"><span class="psl">최고 베이스라인</span><span class="psv">${pct(bestBase)}</span></div>` +
       `<div class="ps"><span class="psl">표본(거래일)</span><span class="psv">${s.n.toLocaleString("ko-KR")}</span></div>`;
@@ -1844,8 +1862,9 @@
     const edge = (s.acc - bestBase) * 100;
     const verdict = edge > 1 ? "베이스라인 대비 우위" : (edge > -1 ? "사실상 베이스라인 수준(예측력 미미)" : "베이스라인보다 못함");
     document.getElementById("pred-note").innerHTML =
-      `특징: <b>${feeds.map(f => f.name).join(" · ")}</b> 밤사이 수익률(정밀 시점 정렬, 미래참조 없음). `
+      `특징: <b>${feeds.map(f => f.name).join(" · ")}</b> 밤사이 수익률(정밀 시점 정렬, 미래참조 없음) + 비선형(신호 크기)·레짐(최근 변동성). `
       + `방향은 로지스틱, 예상 종가는 릿지 회귀로 산출. `
+      + `<b>선택적 예측</b>: 상승/하락 확률이 60% 미만인 애매한 날은 '관망'으로 두고, 고신뢰일만 보면 적중 ${pct(s.accConf)}(전체의 ${pct(s.coverage)}). `
       + `베이스라인 — 항상 같은 방향 ${pct(s.baseUp)} · 하이닉스 모멘텀 ${pct(s.baseMom)} · 미국 신호 그대로 ${pct(s.baseUS)}. `
       + `<b>최고 베이스라인 대비 ${edge >= 0 ? "+" : ""}${edge.toFixed(1)}%p → ${verdict}.</b> `
       + `일간 예측의 R²는 원래 낮은 것이 정상이며, 학습·연구용 참고 지표이고 투자 자문이 아닙니다.`;
