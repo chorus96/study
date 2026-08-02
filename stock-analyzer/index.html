@@ -437,7 +437,7 @@
         <span class="pred-arrow flat" id="pred-arrow">–</span>
         <div class="pred-nums">
           <span class="pred-ret num" id="pred-prob">–</span>
-          <span class="pred-sub">예상 수익률 <b class="num" id="pred-ret">–</b> · 예상 종가 <b class="num" id="pred-close">–</b> · 기준일 <span id="pred-base">–</span></span>
+          <span class="pred-sub">예상 시작가 <b class="num" id="pred-open">–</b> · 예상 종가 <b class="num" id="pred-close">–</b> · 예상 수익률 <b class="num" id="pred-ret">–</b> · 기준일 <span id="pred-base">–</span></span>
         </div>
       </div>
       <div class="pred-stats" id="pred-stats"></div>
@@ -1544,7 +1544,7 @@
   function _buildAligned(hyPts, feeds) {
     const hy = hyPts.slice().filter(p => isFinite(p.t) && isFinite(p.c) && p.c > 0).sort((a, b) => a.t - b.t);
     const us0 = feeds[0];   // 미국 세션 기준 피드(마이크론)
-    const X = [], y = [], dates = [], hyc = [], prevy = [], usFresh = [];
+    const X = [], y = [], dates = [], hyc = [], prevy = [], usFresh = [], gap = [];
     for (let i = 1; i < hy.length; i++) {
       const t0 = hy[i - 1].t, t1 = hy[i].t, feats = []; let ok = true;
       for (const f of feeds) {
@@ -1559,8 +1559,11 @@
       // 두 하이닉스 종가 사이에 새 미국 세션이 마감됐는가(= 전날 미국장이 열렸는가).
       // 같은 미국 종가를 재사용하면(개수 동일) 전날 미국장 휴장으로 본다.
       usFresh.push(_countBefore(us0.ts, t1) > _countBefore(us0.ts, t0));
+      // 밤사이 갭(전일 종가→당일 시가) — 시가(o)가 있을 때만. 없으면 null.
+      const op = hy[i].o;
+      gap.push((isFinite(op) && op > 0) ? Math.log(op / hy[i - 1].c) : null);
     }
-    return { X, y, dates, hyc, prevy, usFresh };
+    return { X, y, dates, hyc, prevy, usFresh, gap };
   }
   function _nextFeatures(hyPts, feeds) {
     const hy = hyPts.slice().filter(p => isFinite(p.t) && isFinite(p.c) && p.c > 0).sort((a, b) => a.t - b.t);
@@ -1605,6 +1608,7 @@
     const a = document.getElementById("pred-arrow");
     a.className = "pred-arrow flat"; a.textContent = "–";
     const pr = document.getElementById("pred-prob"); pr.className = "pred-ret num flat"; pr.textContent = "–";
+    document.getElementById("pred-open").textContent = "–";
     document.getElementById("pred-ret").textContent = "–";
     document.getElementById("pred-close").textContent = "–";
     document.getElementById("pred-base").textContent = "–";
@@ -1692,13 +1696,17 @@
     const feeds = [{ name: "마이크론", ...(_prepFeed(mu.pts)) }];
     if (nv && nv.pts && nv.pts.length > 30) feeds.push({ name: "엔비디아", ...(_prepFeed(nv.pts)) });
 
-    const { X, y, dates, hyc, prevy, usFresh } = _buildAligned(hy.pts, feeds);
+    const { X, y, dates, hyc, prevy, usFresh, gap } = _buildAligned(hy.pts, feeds);
     if (X.length < 120) { predMsg("공통 거래일이 부족해 예측할 수 없습니다."); return; }
 
     // 전체 데이터 최종 모델(다음 거래일용)
     const sc = _fitScaler(X), Xs = _applyScaler(X, sc);
     const beta = _olsRidge(Xs, y, LAM);
     const gam = _logistic(Xs, y.map(v => v > 0 ? 1 : 0), LAM, 30);
+    // 밤사이 갭(시가) 모델 — 시가가 있는 표본이 충분할 때만 학습
+    const gIdx = [];
+    for (let i = 0; i < gap.length; i++) if (gap[i] != null && isFinite(gap[i])) gIdx.push(i);
+    const gapBeta = gIdx.length >= 60 ? _olsRidge(gIdx.map(i => Xs[i]), gIdx.map(i => gap[i]), LAM) : null;
 
     // 워크포워드 표본외 평가
     const oos = _walkForward(X, y, prevy, LAM, Math.max(120, Math.floor(X.length * 0.5)), WF_STEP);
@@ -1711,6 +1719,7 @@
     if (!nf) {
       arrowEl.className = "pred-arrow flat"; arrowEl.textContent = "–";
       probEl.className = "pred-ret num flat"; probEl.textContent = "–";
+      document.getElementById("pred-open").textContent = "–";
       document.getElementById("pred-ret").textContent = "–";
       document.getElementById("pred-close").textContent = "–";
     } else {
@@ -1722,6 +1731,9 @@
       arrowEl.textContent = dir === "up" ? "▲ 상승" : "▼ 하락";
       probEl.className = "pred-ret num " + dir;
       probEl.textContent = "상승확률 " + (pUp * 100).toFixed(0) + "%";
+      // 예상 시작가 = 전일 종가 × exp(밤사이 갭 예측). 시가 데이터 없으면 "–".
+      const predOpen = gapBeta ? lastHy * Math.exp(_dot(gapBeta, xs)) : null;
+      document.getElementById("pred-open").textContent = predOpen ? fmtKRW(predOpen) : "–";
       document.getElementById("pred-ret").textContent = (predRet >= 0 ? "+" : "") + (predRet * 100).toFixed(2) + "%";
       document.getElementById("pred-close").textContent = fmtKRW(predClose);
     }
