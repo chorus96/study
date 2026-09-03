@@ -20,10 +20,22 @@ tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 
 # ---------- 1) Google News RSS 수집 (키 불필요) ----------
+# Google News가 데이터센터 IP에 일시적으로 429/503을 주는 경우가 있어
+# 지수 백오프로 최대 4회 재시도한다. 최종 실패 시에는 조용히 건너뛰되
+# (OUT을 건드리지 않으므로) 캐시된 직전 news.json이 그대로 유지된다.
 encoded="$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))' "$QUERY")"
 rss="https://news.google.com/rss/search?q=${encoded}&hl=ko&gl=KR&ceid=KR:ko"
-if ! curl -sfL --max-time 30 -A "$UA" "$rss" -o "$tmp"; then
-  echo "뉴스 RSS 수집 실패(HTTP) → 건너뜀" >&2; exit 0
+ok=0
+for attempt in 1 2 3 4; do
+  if curl -sfL --max-time 30 -A "$UA" "$rss" -o "$tmp"; then ok=1; break; fi
+  if [ "$attempt" -lt 4 ]; then
+    delay=$((2 ** (attempt - 1)))   # 1s, 2s, 4s
+    echo "뉴스 RSS 수집 실패(HTTP) → ${delay}s 후 재시도(${attempt}/3)" >&2
+    sleep "$delay"
+  fi
+done
+if [ "$ok" -ne 1 ]; then
+  echo "뉴스 RSS 수집 최종 실패(HTTP) → 건너뜀(캐시 유지)" >&2; exit 0
 fi
 
 # ---------- 2) 헤드라인 파싱 + 키워드 기반 심리 집계 → news.json ----------
