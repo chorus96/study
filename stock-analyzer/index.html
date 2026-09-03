@@ -313,6 +313,8 @@
 
   footer { font-size: .74rem; color: var(--muted); line-height: 1.6; padding: 4px 4px 0; text-align: center; }
   footer strong { color: var(--ink-2); }
+  footer a { color: var(--ink-2); text-decoration: none; border-bottom: 1px solid var(--border-strong); }
+  footer a:hover { color: var(--accent); }
 
   @media (max-width: 360px) { :root { --fs-display: 2.15rem; } .chips { grid-template-columns: 1fr; } }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -465,6 +467,11 @@
       <div class="chart-box"><div id="tip-predchart2" class="tip"></div><svg id="chart-predchart2" viewBox="0 0 340 210" preserveAspectRatio="none" role="img" aria-label="예측 대 실제 수익률 차트(미국 휴장 제외)"></svg></div>
     </section>
   </div><!-- /view-predict -->
+
+  <footer>
+    이 대시보드는 <strong>Claude</strong>로 제작했습니다 · Claude를 만든 곳
+    <a href="https://www.anthropic.com" target="_blank" rel="noopener noreferrer"><strong>Anthropic</strong></a>
+  </footer>
 
 </div>
 
