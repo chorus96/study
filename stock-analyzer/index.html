@@ -311,13 +311,9 @@
   .btn:active { transform: translateY(1px); }
   .err { color: var(--up); font-size: .8rem; font-weight: 650; min-height: 1em; }
 
-  footer { font-size: .86rem; color: var(--muted); line-height: 1.7; text-align: center;
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
-    box-shadow: var(--shadow); padding: 16px 18px; margin-top: 2px; }
-  footer .made-by { font-weight: 750; color: var(--ink); font-size: .92rem; }
-  footer strong { color: var(--ink-2); }
-  footer a { color: var(--accent); font-weight: 750; text-decoration: none; border-bottom: 1px solid var(--accent); }
-  footer a:hover { opacity: .8; }
+  .preipo-note { margin: 10px 0 0; font-size: .82rem; line-height: 1.6; color: var(--ink-2);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+  .preipo-note b { color: var(--ink); }
 
   @media (max-width: 360px) { :root { --fs-display: 2.15rem; } .chips { grid-template-columns: 1fr; } }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -339,6 +335,7 @@
       <button type="button" data-stock="nvidia" aria-pressed="false">엔비디아</button>
       <button type="button" data-stock="kb" aria-pressed="false">KB금융</button>
       <button type="button" data-stock="nh" aria-pressed="false">NH투자증권</button>
+      <button type="button" data-stock="anthropic" aria-pressed="false">Anthropic</button>
     </div>
     <div class="ticker-row">
       <span class="ticker" id="tk-name">SK하이닉스</span>
@@ -351,6 +348,7 @@
       <span class="badge">기간 <b id="badge-n">–</b></span>
       <span class="badge">RSI 14 · MACD 12·26·9 · BB 20·2σ</span>
     </div>
+    <p class="preipo-note" id="preipo-note" hidden>ℹ️ Anthropic은 아직 <b>비상장(상장 예정)</b>이라 실제 시세가 없습니다. 아래 차트·가격은 <b>예시(샘플)</b>이며, <b>관련기사(뉴스)는 실데이터</b>입니다. 상장 후 시세 연동을 붙일 예정입니다.</p>
   </header>
 
   <!-- HERO -->
@@ -471,11 +469,6 @@
     </section>
   </div><!-- /view-predict -->
 
-  <footer>
-    <div class="made-by">🤖 이 대시보드는 Claude로 제작했습니다</div>
-    <div>Claude를 만든 곳 · <a href="https://www.anthropic.com" target="_blank" rel="noopener noreferrer">Anthropic</a></div>
-  </footer>
-
 </div>
 
 <script>
@@ -589,6 +582,15 @@
       name: "NH투자증권", code: "005940", symbol: "005940.KS", dir: "nh",
       currency: "KRW", exch: "KRX",
       sample: { base: 14500, floor: 9000, drift: 24, shock: 420, step: 10 },
+    },
+    // Anthropic(Claude 개발사)은 아직 비상장이라 실시간 시세가 없다.
+    // 상장 예정에 대비해 '틀'만 먼저 만들어 두고, 시세는 예시(샘플)로 표시하며
+    // 관련기사(뉴스)는 지금도 실데이터로 조회한다. 상장 후 티커가 확정되면
+    // code/symbol/exch를 실제 값으로 바꾸고 시세 수집을 붙이면 된다.
+    anthropic: {
+      name: "Anthropic", code: "상장 예정", symbol: "ANTHROPIC", dir: "anthropic",
+      currency: "USD", exch: "비상장",
+      sample: { base: 150, floor: 80, drift: 1.0, shock: 6, step: 0.01 },
     },
   };
   let curStock = "hynix";
@@ -1928,7 +1930,9 @@
     document.querySelectorAll("#stock-seg button").forEach(b =>
       b.setAttribute("aria-pressed", String(b.dataset.stock === key)));
     document.getElementById("tk-name").textContent = cfg.name;
-    document.getElementById("tk-code").textContent = (cfg.exch || "KRX") + " " + cfg.code;
+    document.getElementById("tk-code").textContent =
+      cfg.exch === "비상장" ? (cfg.exch + " · " + cfg.code) : ((cfg.exch || "KRX") + " " + cfg.code);
+    document.getElementById("preipo-note").hidden = cfg.exch !== "비상장";
     document.title = cfg.name + " 기술적 분석";
     hoverIdx = null;
     const [live, news, fund, fin] = await Promise.all([loadLive(cfg.dir), loadNews(cfg.dir), loadFundamentals(cfg.dir), loadFinancials(cfg.dir)]);
