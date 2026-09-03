@@ -316,6 +316,17 @@ jobs:
           NEWS_QUERY: 'NH투자증권'
           NEWS_OUT: 'stock-analyzer/nh/news.json'
 
+      # Anthropic(Claude 개발사)은 비상장이라 시세는 없지만, 상장 예정에 대비해
+      # 관련기사는 지금부터 실데이터로 수집한다. 한/영 헤드라인을 모두 포괄하도록
+      # 'Anthropic OR 앤트로픽'으로 조회한다.
+      - name: Analyze Anthropic news (keyword-based, no API key)
+        continue-on-error: true
+        run: bash scripts/fetch_news.sh
+        env:
+          NAME: 'Anthropic'
+          NEWS_QUERY: 'Anthropic OR 앤트로픽'
+          NEWS_OUT: 'stock-analyzer/anthropic/news.json'
+
       # ── 재무지표(PER·영업이익): 분기 데이터라 자주 바뀌지 않고 미국 API 한도가
       #    빡빡하므로, 10분(시세) 실행에서는 건너뛰고 4시간 실행에서만 갱신한다.
       #    아래 8개 스텝은 '*/10 * * * 1-5' 크론이 아닐 때만(=4시간 크론·push·수동) 실행. ──
