@@ -75,6 +75,13 @@ jobs:
             stock-analyzer/nvidia/financials.json
             stock-analyzer/kb/financials.json
             stock-analyzer/nh/financials.json
+            stock-analyzer/hynix/news.json
+            stock-analyzer/samsung/news.json
+            stock-analyzer/micron/news.json
+            stock-analyzer/nvidia/news.json
+            stock-analyzer/kb/news.json
+            stock-analyzer/nh/news.json
+            stock-analyzer/anthropic/news.json
           key: dash-cache-${{ github.run_id }}
           restore-keys: |
             dash-cache-
@@ -511,6 +518,13 @@ jobs:
             stock-analyzer/nvidia/financials.json
             stock-analyzer/kb/financials.json
             stock-analyzer/nh/financials.json
+            stock-analyzer/hynix/news.json
+            stock-analyzer/samsung/news.json
+            stock-analyzer/micron/news.json
+            stock-analyzer/nvidia/news.json
+            stock-analyzer/kb/news.json
+            stock-analyzer/nh/news.json
+            stock-analyzer/anthropic/news.json
           key: dash-cache-${{ github.run_id }}
 
       - name: Configure Pages
